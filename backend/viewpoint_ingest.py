@@ -11,10 +11,10 @@ VP_BASE = "https://www.viewpoint.ca"
 # Halifax Regional Municipality bounding box.
 # Used when the viewpoint.ca API returns lat/lng per listing (primary filter).
 # Coordinates are approximate — HRM is a large municipality stretching far east/west.
-HRM_LAT_MIN = 44.30
-HRM_LAT_MAX = 45.25
-HRM_LNG_MIN = -64.10
-HRM_LNG_MAX = -62.45
+HRM_LAT_MIN = 44.5849
+HRM_LAT_MAX = 44.7746
+HRM_LNG_MIN = -63.6900
+HRM_LNG_MAX = -63.2819
 
 # City-name fallback for when the API doesn't include coordinates.
 # Add entries here if you notice HRM listings being missed.
