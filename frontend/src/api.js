@@ -30,4 +30,5 @@ export const api = {
   deleteListing: (id) => req(`/listings/${id}`, { method: 'DELETE' }),
   getPriceHistory: (id) => req(`/listings/${id}/price-history`),
   refreshPrices: () => req('/listings/refresh-prices', { method: 'POST' }),
+  ingest: () => req('/ingest', { method: 'POST' }),
 }

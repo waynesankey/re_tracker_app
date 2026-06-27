@@ -17,6 +17,8 @@ class ListingDB(Base):
     address = Column(String)
     category = Column(String, default="New")
     property_type = Column(String, nullable=True)
+    listing_id = Column(String, nullable=True)
+    class_id = Column(String, nullable=True)
     notes = Column(String)
     date_added = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow)
@@ -87,6 +89,8 @@ class ListingResponse(BaseModel):
     address: Optional[str] = None
     category: str
     property_type: Optional[str] = None
+    listing_id: Optional[str] = None
+    class_id: Optional[str] = None
     notes: Optional[str] = None
     date_added: datetime
     date_updated: datetime

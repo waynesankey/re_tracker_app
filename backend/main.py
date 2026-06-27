@@ -36,11 +36,32 @@ with engine.connect() as _conn:
         WHERE price IS NOT NULL
         AND id NOT IN (SELECT DISTINCT listing_id FROM price_history)
     """))
-    try:
-        _conn.execute(text("ALTER TABLE listings ADD COLUMN property_type TEXT"))
-        _conn.commit()
-    except Exception:
-        pass  # column already exists
+    for col in ("property_type TEXT", "listing_id TEXT", "class_id TEXT"):
+        try:
+            _conn.execute(text(f"ALTER TABLE listings ADD COLUMN {col}"))
+            _conn.commit()
+        except Exception:
+            pass  # column already exists
+
+    _conn.execute(text(
+        "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
+    ))
+    _conn.commit()
+
+    # Backfill listing_id / class_id from URL for existing viewpoint listings
+    import re as _re
+    _vp_rows = _conn.execute(text(
+        "SELECT id, url FROM listings WHERE url LIKE '%/cutsheet/%'"
+        " AND (listing_id IS NULL OR class_id IS NULL)"
+    )).fetchall()
+    for _rid, _rurl in _vp_rows:
+        _m = _re.search(r"/cutsheet/(\d+)/(\d+)", _rurl or "")
+        if _m:
+            _conn.execute(
+                text("UPDATE listings SET listing_id=:lid, class_id=:cid WHERE id=:id"),
+                {"lid": _m.group(1), "cid": _m.group(2), "id": _rid},
+            )
+    _conn.commit()
 
 app = FastAPI(title="Real Estate Tracker")
 
@@ -257,6 +278,83 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
     db.commit()
     db.refresh(listing)
     return listing
+
+
+@app.post("/api/ingest")
+def ingest_listings(db: Session = Depends(get_db)):
+    from viewpoint_ingest import fetch_new_hrm_listings
+    from datetime import date as date_cls, timedelta
+
+    row = db.execute(text("SELECT value FROM settings WHERE key='last_ingest_date'")).fetchone()
+    if row:
+        last_date = date_cls.fromisoformat(row[0])
+        cutoff = last_date - timedelta(days=1)   # re-fetch yesterday to catch late postings
+    else:
+        cutoff = date_cls.today() - timedelta(days=7)   # first run: look back 7 days
+
+    new_listings = fetch_new_hrm_listings(cutoff)
+
+    existing_keys = {
+        (r[0], r[1])
+        for r in db.execute(text(
+            "SELECT listing_id, class_id FROM listings"
+            " WHERE listing_id IS NOT NULL AND class_id IS NOT NULL"
+        )).fetchall()
+    }
+
+    added = 0
+    now = datetime.utcnow()
+    for item in new_listings:
+        key = (item["listing_id"], item["class_id"])
+        if key in existing_keys:
+            continue
+
+        # Scrape the listing page to get the real photo and title
+        try:
+            meta = scrape_listing(item["url"])
+        except Exception:
+            meta = {}
+        image_url = meta.get("image_url") or item.get("image_url")
+        title = meta.get("title") or None
+
+        listing = ListingDB(
+            url=item["url"],
+            source_domain="viewpoint.ca",
+            image_url=image_url,
+            title=title,
+            listing_id=item["listing_id"],
+            class_id=item["class_id"],
+            address=item.get("address") or None,
+            price=item.get("price"),
+            category="Inbox",
+            property_type=item["property_type"],
+            date_added=now,
+            date_updated=now,
+        )
+        db.add(listing)
+        db.flush()
+        db.add(StatusHistoryDB(
+            listing_id=listing.id,
+            from_category=None,
+            to_category="Inbox",
+            changed_at=now,
+        ))
+        if listing.price is not None:
+            db.add(PriceHistoryDB(
+                listing_id=listing.id,
+                old_price=None,
+                new_price=float(listing.price),
+                recorded_at=now,
+            ))
+        existing_keys.add(key)
+        added += 1
+
+    db.execute(
+        text("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_ingest_date', :v)"),
+        {"v": date_cls.today().isoformat()},
+    )
+    db.commit()
+    return {"added": added, "fetched": len(new_listings), "cutoff": cutoff.isoformat()}
 
 
 @app.delete("/api/listings/{listing_id}")

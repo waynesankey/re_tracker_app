@@ -1,4 +1,5 @@
 const BADGE_COLORS = {
+  'Inbox': '#0e7490',
   'New': '#6b7280',
   'Interested': '#2563eb',
   'Showing Requested': '#d97706',

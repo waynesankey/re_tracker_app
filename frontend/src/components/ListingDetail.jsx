@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 
 const BADGE_COLORS = {
+  'Inbox': '#0e7490',
   'New': '#6b7280',
   'Interested': '#2563eb',
   'Showing Requested': '#d97706',
@@ -196,7 +197,7 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
 
           {history.length > 0 && (
             <div className="history">
-              <p className="field-label">Status history</p>
+              <p className="field-label">Category history</p>
               <ul className="history-list">
                 {history.map((h) => (
                   <li key={h.id} className="history-entry">

@@ -2,9 +2,9 @@ import { useState } from 'react'
 
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
-  adding, error, refreshing, theme,
+  adding, error, refreshing, ingesting, ingestMsg, theme,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
-  onSortChange, onAdd, onRefresh, onToggleTheme,
+  onSortChange, onAdd, onRefresh, onIngest, onToggleTheme,
 }) {
   const [input, setInput] = useState('')
 
@@ -77,6 +77,22 @@ export default function TopBar({
           <option value="date_added">Date Added</option>
           <option value="price">Price ↑</option>
         </select>
+
+        <button
+          className="ingest-btn"
+          onClick={onIngest}
+          disabled={ingesting}
+          title="Fetch new HRM listings from viewpoint.ca since last run"
+        >
+          {ingesting ? 'Fetching…' : 'Fetch New'}
+        </button>
+        {ingestMsg && (
+          <span className={`ingest-msg${ingestMsg.error ? ' ingest-msg--err' : ''}`}>
+            {ingestMsg.error
+              ? `Error: ${ingestMsg.error}`
+              : `${ingestMsg.added} new · ${ingestMsg.fetched} checked`}
+          </span>
+        )}
 
         <button
           className="refresh-btn"

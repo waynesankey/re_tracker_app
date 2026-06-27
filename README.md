@@ -71,6 +71,18 @@ Categories reflect where you are in your decision process.
 
 Move a listing between categories by opening it, changing the Category dropdown, and clicking **Save**. Every change is recorded in the status history visible at the bottom of the listing.
 
+## Fetching new listings (Inbox)
+
+Click **Fetch New** in the top bar to pull new listings from viewpoint.ca into the **Inbox** category. The app queries the viewpoint.ca listing API across your target price ranges, filters to HRM by coordinates, and imports anything listed since the last run.
+
+- **Price ranges:** Houses $600K–$1.5M · Land $75K–$900K
+- **De-duplication:** listings already in the tracker are skipped
+- **Photos and titles** are fetched automatically from each listing page
+- **Date overlap:** the last day is always re-fetched to catch listings posted after a prior run
+- **First run** looks back 7 days; subsequent runs look back to the day after the previous run
+
+After reviewing Inbox listings, open each one to set a category (e.g. New or Interested) and save.
+
 ## Refreshing prices
 
 Click **Refresh Prices** in the top bar to re-scrape current prices from viewpoint.ca for all active (non-Sold) listings. A results panel opens showing every listing checked:

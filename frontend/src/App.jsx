@@ -6,8 +6,8 @@ import ListingDetail from './components/ListingDetail'
 import RefreshResultsModal from './components/RefreshResultsModal'
 
 export const CATEGORIES_BY_TYPE = {
-  House: ['New', 'Interested', 'Showing Requested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
-  Land:  ['New', 'Interested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
+  House: ['Inbox', 'New', 'Interested', 'Showing Requested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
+  Land:  ['Inbox', 'New', 'Interested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
 }
 // House is the superset — use it as the "All" list
 const ALL_CATEGORIES = CATEGORIES_BY_TYPE.House
@@ -31,7 +31,10 @@ export default function App() {
   const [addError, setAddError] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshResults, setRefreshResults] = useState(null) // {results, runDate} — drives modal
+  const [ingesting, setIngesting] = useState(false)
+  const [ingestMsg, setIngestMsg] = useState(null) // {added, fetched} or {error}
   const refreshMsgTimer = useRef(null)
+  const ingestMsgTimer = useRef(null)
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -95,6 +98,22 @@ export default function App() {
     setSelected(null)
   }
 
+  const handleIngest = async () => {
+    setIngesting(true)
+    setIngestMsg(null)
+    clearTimeout(ingestMsgTimer.current)
+    try {
+      const result = await api.ingest()
+      await load()
+      setIngestMsg({ added: result.added, fetched: result.fetched })
+    } catch (e) {
+      setIngestMsg({ error: e.message })
+    } finally {
+      setIngesting(false)
+      ingestMsgTimer.current = setTimeout(() => setIngestMsg(null), 8000)
+    }
+  }
+
   const handleRefresh = async () => {
     setRefreshing(true)
     clearTimeout(refreshMsgTimer.current)
@@ -149,6 +168,8 @@ export default function App() {
         adding={adding}
         error={addError}
         refreshing={refreshing}
+        ingesting={ingesting}
+        ingestMsg={ingestMsg}
         theme={theme}
         onPropertyTypeChange={handlePropertyTypeChange}
         onCategoryChange={handleCategoryChange}
@@ -156,6 +177,7 @@ export default function App() {
         onSortChange={setSort}
         onAdd={handleAdd}
         onRefresh={handleRefresh}
+        onIngest={handleIngest}
         onToggleTheme={toggleTheme}
       />
       <ListingGrid listings={listings} loading={loading} onSelect={setSelected} />
