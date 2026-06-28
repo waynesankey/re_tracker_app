@@ -11,7 +11,10 @@ const BADGE_COLORS = {
   'Sold': '#475569',
 }
 
-export default function ListingDetail({ listing, categoriesByType, allCategories, onUpdate, onDelete, onClose }) {
+export default function ListingDetail({
+  listing, categoriesByType, allCategories, currentUser,
+  onUpdate, onDelete, onPropose, onAgree, onWithdraw, onReject, onClose,
+}) {
   const [form, setForm] = useState({ ...listing })
   const [saving, setSaving] = useState(false)
   const [savedAt, setSavedAt] = useState(null)
@@ -19,6 +22,11 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [history, setHistory] = useState([])
   const [priceHistory, setPriceHistory] = useState([])
+  const [proposalLog, setProposalLog] = useState([])
+  const [proposeCat, setProposeCat] = useState('')
+  const [showRejectForm, setShowRejectForm] = useState(false)
+  const [rejectNote, setRejectNote] = useState('')
+  const [proposalBusy, setProposalBusy] = useState(false)
   const bannerTimerRef = useRef(null)
 
   const fetchHistory = useCallback(() => {
@@ -30,6 +38,10 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
       .then((r) => r.json())
       .then(setPriceHistory)
       .catch(() => {})
+    fetch(`/api/listings/${listing.id}/proposal-log`)
+      .then((r) => r.json())
+      .then(setProposalLog)
+      .catch(() => {})
   }, [listing.id])
 
   useEffect(() => { fetchHistory() }, [fetchHistory])
@@ -37,6 +49,9 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
   useEffect(() => {
     setForm({ ...listing })
     setConfirmDelete(false)
+    setProposeCat('')
+    setShowRejectForm(false)
+    setRejectNote('')
   }, [listing.id])
 
   // Auto-dismiss the saved banner after 3.5 s
@@ -84,7 +99,6 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
         title: form.title || null,
         address: form.address || null,
         price: form.price !== '' && form.price != null ? parseFloat(form.price) : null,
-        category: form.category,
         property_type: form.property_type || null,
         notes: form.notes || null,
         image_url: form.image_url || null,
@@ -97,6 +111,32 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
     } finally {
       setSaving(false)
     }
+  }
+
+  const handlePropose = async () => {
+    if (!proposeCat || proposeCat === listing.category) return
+    setProposalBusy(true)
+    try { await onPropose(listing.id, proposeCat) }
+    finally { setProposalBusy(false) }
+  }
+
+  const handleAgree = async () => {
+    setProposalBusy(true)
+    try { await onAgree(listing.id) }
+    finally { setProposalBusy(false) }
+  }
+
+  const handleWithdraw = async () => {
+    setProposalBusy(true)
+    try { await onWithdraw(listing.id) }
+    finally { setProposalBusy(false) }
+  }
+
+  const handleReject = async () => {
+    if (!rejectNote.trim()) return
+    setProposalBusy(true)
+    try { await onReject(listing.id, rejectNote.trim()) }
+    finally { setProposalBusy(false) }
   }
 
   const dateAdded = new Date(listing.date_added).toLocaleDateString('en-CA', {
@@ -146,14 +186,97 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
           </Field>
 
           <Field label="Category">
-            <select value={form.category} onChange={set('category')}>
-              {availableCategories.map((c) => (
-                <option key={c} value={c} style={{ background: BADGE_COLORS[c] + '22' }}>
-                  {c}
-                </option>
-              ))}
-            </select>
+            <div className="category-display">
+              <span
+                className="category-badge"
+                style={{ background: BADGE_COLORS[listing.category] ?? '#6b7280' }}
+              >
+                {listing.category}
+              </span>
+            </div>
           </Field>
+
+          {/* ── Proposal section ── */}
+          <div className="proposal-section">
+            {listing.proposed_category ? (
+              listing.proposed_by === currentUser ? (
+                <div className="proposal-pending">
+                  <span className="proposal-label">
+                    You proposed → <strong>{listing.proposed_category}</strong>
+                  </span>
+                  <button
+                    className="btn btn-sm"
+                    onClick={handleWithdraw}
+                    disabled={proposalBusy}
+                  >Withdraw</button>
+                </div>
+              ) : (
+                <div className="proposal-pending">
+                  <span className="proposal-label">
+                    <strong>{listing.proposed_by}</strong> proposed → <strong>{listing.proposed_category}</strong>
+                  </span>
+                  {!showRejectForm ? (
+                    <div className="proposal-btns">
+                      <button
+                        className="btn btn-primary btn-sm"
+                        onClick={handleAgree}
+                        disabled={proposalBusy}
+                      >Agree</button>
+                      <button
+                        className="btn btn-danger-outline btn-sm"
+                        onClick={() => setShowRejectForm(true)}
+                        disabled={proposalBusy}
+                      >Reject</button>
+                    </div>
+                  ) : (
+                    <div className="reject-form">
+                      <textarea
+                        rows={2}
+                        placeholder="Reason for rejection…"
+                        value={rejectNote}
+                        onChange={(e) => setRejectNote(e.target.value)}
+                      />
+                      <div className="proposal-btns">
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={handleReject}
+                          disabled={proposalBusy || !rejectNote.trim()}
+                        >Confirm Reject</button>
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => { setShowRejectForm(false); setRejectNote('') }}
+                        >Cancel</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            ) : (
+              <div className="proposal-propose">
+                <span className="proposal-label">Propose →</span>
+                <select
+                  value={proposeCat}
+                  onChange={(e) => setProposeCat(e.target.value)}
+                  disabled={!currentUser}
+                >
+                  <option value="">select new category…</option>
+                  {availableCategories
+                    .filter((c) => c !== listing.category)
+                    .map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                </select>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handlePropose}
+                  disabled={!proposeCat || proposalBusy || !currentUser}
+                >Propose</button>
+                {!currentUser && (
+                  <span className="proposal-hint">Select a user first</span>
+                )}
+              </div>
+            )}
+          </div>
 
           <Field label="Title">
             <input value={form.title ?? ''} onChange={set('title')} />
@@ -206,6 +329,29 @@ export default function ListingDetail({ listing, categoriesByType, allCategories
                     </span>
                     <span className="history-date">
                       {new Date(h.changed_at + 'Z').toLocaleDateString('en-CA', {
+                        year: 'numeric', month: 'short', day: 'numeric',
+                      })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {proposalLog.length > 0 && (
+            <div className="history">
+              <p className="field-label">Proposal history</p>
+              <ul className="history-list">
+                {proposalLog.map((p) => (
+                  <li key={p.id} className="history-entry">
+                    <span className="history-arrow">
+                      {p.action === 'proposed' && `${p.proposed_by} proposed → ${p.to_category}`}
+                      {p.action === 'agreed'   && `${p.action_by} agreed (${p.from_category} → ${p.to_category})`}
+                      {p.action === 'withdrawn' && `${p.action_by} withdrew proposal`}
+                      {p.action === 'rejected' && `${p.action_by} rejected${p.note ? `: "${p.note}"` : ''}`}
+                    </span>
+                    <span className="history-date">
+                      {new Date(p.action_at + 'Z').toLocaleDateString('en-CA', {
                         year: 'numeric', month: 'short', day: 'numeric',
                       })}
                     </span>

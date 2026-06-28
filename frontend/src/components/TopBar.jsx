@@ -14,8 +14,10 @@ const CATEGORY_COLORS = {
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
   adding, error, refreshing, ingesting, ingestMsg, theme,
+  currentUser, proposalCount, showProposals,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
   onSortChange, onAdd, onRefresh, onIngest, onToggleTheme,
+  onUserChange, onShowProposals, onHideProposals,
 }) {
   const [input, setInput] = useState('')
 
@@ -31,23 +33,43 @@ export default function TopBar({
     <header className="topbar">
       <div className="topbar-left">
         <span className="logo">Listings</span>
+
+        <div className="user-selector">
+          {['Wayne', 'Christina'].map((u) => (
+            <button
+              key={u}
+              className={`user-btn${currentUser === u ? ' active' : ''}`}
+              onClick={() => onUserChange(u)}
+            >{u}</button>
+          ))}
+        </div>
+
         <nav className="filter-tabs">
+          <button
+            className={`tab tab--proposals${showProposals ? ' active' : ''}`}
+            onClick={onShowProposals}
+          >
+            Proposals{proposalCount > 0 ? ` (${proposalCount})` : ''}
+          </button>
+
+          <span className="tab-sep" aria-hidden="true" />
+
           {/* Type tabs — one always active, independent of category selection */}
           <button
-            className={`tab${!propertyType ? ' active' : ''}`}
-            onClick={() => { onPropertyTypeChange(''); onCategoryChange('') }}
+            className={`tab${!propertyType && !showProposals ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onPropertyTypeChange(''); onCategoryChange('') }}
           >
             All
           </button>
           <button
-            className={`tab${propertyType === 'House' ? ' active' : ''}`}
-            onClick={() => onPropertyTypeChange('House')}
+            className={`tab${propertyType === 'House' && !showProposals ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onPropertyTypeChange('House') }}
           >
             Houses
           </button>
           <button
-            className={`tab${propertyType === 'Land' ? ' active' : ''}`}
-            onClick={() => onPropertyTypeChange('Land')}
+            className={`tab${propertyType === 'Land' && !showProposals ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onPropertyTypeChange('Land') }}
           >
             Land
           </button>

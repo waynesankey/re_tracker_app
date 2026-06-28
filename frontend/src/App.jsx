@@ -4,6 +4,7 @@ import TopBar from './components/TopBar'
 import ListingGrid from './components/ListingGrid'
 import ListingDetail from './components/ListingDetail'
 import RefreshResultsModal from './components/RefreshResultsModal'
+import ProposalsView from './components/ProposalsView'
 
 export const CATEGORIES_BY_TYPE = {
   House: ['Inbox', 'New', 'Interested', 'Showing Requested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
@@ -18,10 +19,17 @@ function getInitialTheme() {
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
 }
 
+function getInitialUser() {
+  return localStorage.getItem('currentUser') || ''
+}
+
 export default function App() {
   const [listings, setListings] = useState([])
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState(getInitialTheme)
+  const [currentUser, setCurrentUser] = useState(getInitialUser)
+  const [proposals, setProposals] = useState([])
+  const [showProposals, setShowProposals] = useState(false)
   const [propertyType, setPropertyType] = useState('')
   const [category, setCategory] = useState('')
   const [priceChangedFilter, setPriceChangedFilter] = useState(false)
@@ -41,7 +49,20 @@ export default function App() {
     localStorage.setItem('theme', theme)
   }, [theme])
 
+  useEffect(() => {
+    localStorage.setItem('currentUser', currentUser)
+  }, [currentUser])
+
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))
+
+  const handleUserChange = (user) => setCurrentUser(user)
+
+  const loadProposals = useCallback(async () => {
+    try {
+      const data = await api.getProposals()
+      setProposals(data)
+    } catch (_) {}
+  }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -53,12 +74,12 @@ export default function App() {
         if (propertyType) params.property_type = propertyType
         if (category) params.category = category
       }
-      const data = await api.getListings(params)
+      const [data] = await Promise.all([api.getListings(params), loadProposals()])
       setListings(data)
     } finally {
       setLoading(false)
     }
-  }, [propertyType, category, sort, priceChangedFilter])
+  }, [propertyType, category, sort, priceChangedFilter, loadProposals])
 
   useEffect(() => { load() }, [load])
 
@@ -112,6 +133,32 @@ export default function App() {
       setIngesting(false)
       ingestMsgTimer.current = setTimeout(() => setIngestMsg(null), 8000)
     }
+  }
+
+  const handlePropose = async (id, newCategory) => {
+    const updated = await api.propose(id, newCategory, currentUser)
+    await load()
+    setSelected(updated)
+  }
+
+  const handleAgree = async (id) => {
+    const updated = await api.agree(id, currentUser)
+    await load()
+    if (showProposals) setSelected(null)
+    else setSelected(updated)
+  }
+
+  const handleWithdraw = async (id) => {
+    const updated = await api.withdraw(id, currentUser)
+    await load()
+    setSelected(updated)
+  }
+
+  const handleReject = async (id, note) => {
+    const updated = await api.reject(id, currentUser, note)
+    await load()
+    if (showProposals) setSelected(null)
+    else setSelected(updated)
   }
 
   const handleRefresh = async () => {
@@ -171,6 +218,9 @@ export default function App() {
         ingesting={ingesting}
         ingestMsg={ingestMsg}
         theme={theme}
+        currentUser={currentUser}
+        proposalCount={proposals.length}
+        showProposals={showProposals}
         onPropertyTypeChange={handlePropertyTypeChange}
         onCategoryChange={handleCategoryChange}
         onPriceChangedFilter={handlePriceChangedFilter}
@@ -179,15 +229,33 @@ export default function App() {
         onRefresh={handleRefresh}
         onIngest={handleIngest}
         onToggleTheme={toggleTheme}
+        onUserChange={handleUserChange}
+        onShowProposals={() => { setShowProposals(true); setSelected(null); loadProposals() }}
+        onHideProposals={() => setShowProposals(false)}
       />
-      <ListingGrid listings={listings} loading={loading} onSelect={setSelected} />
+      {showProposals
+        ? <ProposalsView
+            proposals={proposals}
+            currentUser={currentUser}
+            onSelect={setSelected}
+            onAgree={handleAgree}
+            onWithdraw={handleWithdraw}
+            onReject={handleReject}
+          />
+        : <ListingGrid listings={listings} loading={loading} onSelect={setSelected} />
+      }
       {selected && (
         <ListingDetail
           listing={selected}
           categoriesByType={CATEGORIES_BY_TYPE}
           allCategories={ALL_CATEGORIES}
+          currentUser={currentUser}
           onUpdate={handleUpdate}
           onDelete={handleDelete}
+          onPropose={handlePropose}
+          onAgree={handleAgree}
+          onWithdraw={handleWithdraw}
+          onReject={handleReject}
           onClose={() => setSelected(null)}
         />
       )}

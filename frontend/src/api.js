@@ -31,4 +31,30 @@ export const api = {
   getPriceHistory: (id) => req(`/listings/${id}/price-history`),
   refreshPrices: () => req('/listings/refresh-prices', { method: 'POST' }),
   ingest: () => req('/ingest', { method: 'POST' }),
+  getProposals: () => req('/proposals'),
+  propose: (id, new_category, proposed_by) =>
+    req(`/listings/${id}/propose`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_category, proposed_by }),
+    }),
+  agree: (id, agreed_by) =>
+    req(`/listings/${id}/agree`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agreed_by }),
+    }),
+  withdraw: (id, withdrawn_by) =>
+    req(`/listings/${id}/withdraw`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ withdrawn_by }),
+    }),
+  reject: (id, rejected_by, note) =>
+    req(`/listings/${id}/reject`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rejected_by, note }),
+    }),
+  getProposalLog: (id) => req(`/listings/${id}/proposal-log`),
 }

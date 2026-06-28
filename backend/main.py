@@ -14,6 +14,8 @@ from models import (
     ListingCreate, ListingDB, ListingResponse, ListingUpdate,
     StatusHistoryDB, StatusHistoryResponse,
     PriceHistoryDB, PriceHistoryResponse,
+    ProposalLogDB, ProposalLogResponse,
+    ProposeRequest, AgreeRequest, WithdrawRequest, RejectRequest,
 )
 from scraper import scrape_listing
 
@@ -36,12 +38,37 @@ with engine.connect() as _conn:
         WHERE price IS NOT NULL
         AND id NOT IN (SELECT DISTINCT listing_id FROM price_history)
     """))
-    for col in ("property_type TEXT", "listing_id TEXT", "class_id TEXT"):
+    for col in (
+        "property_type TEXT", "listing_id TEXT", "class_id TEXT",
+        "proposed_category TEXT", "proposed_by TEXT", "proposed_at DATETIME",
+    ):
         try:
             _conn.execute(text(f"ALTER TABLE listings ADD COLUMN {col}"))
             _conn.commit()
         except Exception:
             pass  # column already exists
+
+    try:
+        _conn.execute(text("ALTER TABLE status_history ADD COLUMN changed_by TEXT"))
+        _conn.commit()
+    except Exception:
+        pass
+
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS proposal_log (
+            id INTEGER PRIMARY KEY,
+            listing_id INTEGER NOT NULL REFERENCES listings(id) ON DELETE CASCADE,
+            from_category TEXT NOT NULL,
+            to_category TEXT NOT NULL,
+            proposed_by TEXT NOT NULL,
+            proposed_at DATETIME NOT NULL,
+            action TEXT NOT NULL,
+            action_by TEXT NOT NULL,
+            action_at DATETIME NOT NULL,
+            note TEXT
+        )
+    """))
+    _conn.commit()
 
     _conn.execute(text(
         "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
@@ -81,7 +108,7 @@ def get_listings(
     price_changed: Optional[bool] = None,
     db: Session = Depends(get_db),
 ):
-    q = db.query(ListingDB)
+    q = db.query(ListingDB).filter(ListingDB.proposed_category.is_(None))
     if property_type:
         q = q.filter(ListingDB.property_type == property_type)
     if category:
@@ -355,6 +382,150 @@ def ingest_listings(db: Session = Depends(get_db)):
     )
     db.commit()
     return {"added": added, "fetched": len(new_listings), "cutoff": cutoff.isoformat()}
+
+
+@app.get("/api/proposals", response_model=List[ListingResponse])
+def get_proposals(db: Session = Depends(get_db)):
+    return (
+        db.query(ListingDB)
+        .filter(ListingDB.proposed_category.isnot(None))
+        .order_by(ListingDB.proposed_at.asc())
+        .all()
+    )
+
+
+@app.post("/api/listings/{listing_id}/propose", response_model=ListingResponse)
+def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(get_db)):
+    listing = db.get(ListingDB, listing_id)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Not found")
+    if listing.proposed_category:
+        raise HTTPException(status_code=409, detail="A proposal is already pending")
+    now = datetime.utcnow()
+    listing.proposed_category = body.new_category
+    listing.proposed_by = body.proposed_by
+    listing.proposed_at = now
+    db.add(ProposalLogDB(
+        listing_id=listing_id,
+        from_category=listing.category,
+        to_category=body.new_category,
+        proposed_by=body.proposed_by,
+        proposed_at=now,
+        action="proposed",
+        action_by=body.proposed_by,
+        action_at=now,
+    ))
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+@app.post("/api/listings/{listing_id}/agree", response_model=ListingResponse)
+def agree_change(listing_id: int, body: AgreeRequest, db: Session = Depends(get_db)):
+    listing = db.get(ListingDB, listing_id)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not listing.proposed_category:
+        raise HTTPException(status_code=409, detail="No proposal pending")
+    if body.agreed_by == listing.proposed_by:
+        raise HTTPException(status_code=403, detail="Cannot agree to your own proposal")
+    now = datetime.utcnow()
+    old_category = listing.category
+    new_category = listing.proposed_category
+    db.add(StatusHistoryDB(
+        listing_id=listing_id,
+        from_category=old_category,
+        to_category=new_category,
+        changed_at=now,
+        changed_by=body.agreed_by,
+    ))
+    db.add(ProposalLogDB(
+        listing_id=listing_id,
+        from_category=old_category,
+        to_category=new_category,
+        proposed_by=listing.proposed_by,
+        proposed_at=listing.proposed_at,
+        action="agreed",
+        action_by=body.agreed_by,
+        action_at=now,
+    ))
+    listing.category = new_category
+    listing.proposed_category = None
+    listing.proposed_by = None
+    listing.proposed_at = None
+    listing.date_updated = now
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+@app.post("/api/listings/{listing_id}/withdraw", response_model=ListingResponse)
+def withdraw_proposal(listing_id: int, body: WithdrawRequest, db: Session = Depends(get_db)):
+    listing = db.get(ListingDB, listing_id)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not listing.proposed_category:
+        raise HTTPException(status_code=409, detail="No proposal pending")
+    if body.withdrawn_by != listing.proposed_by:
+        raise HTTPException(status_code=403, detail="Only the proposer can withdraw")
+    now = datetime.utcnow()
+    db.add(ProposalLogDB(
+        listing_id=listing_id,
+        from_category=listing.category,
+        to_category=listing.proposed_category,
+        proposed_by=listing.proposed_by,
+        proposed_at=listing.proposed_at,
+        action="withdrawn",
+        action_by=body.withdrawn_by,
+        action_at=now,
+    ))
+    listing.proposed_category = None
+    listing.proposed_by = None
+    listing.proposed_at = None
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+@app.post("/api/listings/{listing_id}/reject", response_model=ListingResponse)
+def reject_proposal(listing_id: int, body: RejectRequest, db: Session = Depends(get_db)):
+    listing = db.get(ListingDB, listing_id)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not listing.proposed_category:
+        raise HTTPException(status_code=409, detail="No proposal pending")
+    if body.rejected_by == listing.proposed_by:
+        raise HTTPException(status_code=403, detail="Cannot reject your own proposal")
+    now = datetime.utcnow()
+    db.add(ProposalLogDB(
+        listing_id=listing_id,
+        from_category=listing.category,
+        to_category=listing.proposed_category,
+        proposed_by=listing.proposed_by,
+        proposed_at=listing.proposed_at,
+        action="rejected",
+        action_by=body.rejected_by,
+        action_at=now,
+        note=body.note,
+    ))
+    listing.proposed_category = None
+    listing.proposed_by = None
+    listing.proposed_at = None
+    db.commit()
+    db.refresh(listing)
+    return listing
+
+
+@app.get("/api/listings/{listing_id}/proposal-log", response_model=List[ProposalLogResponse])
+def get_proposal_log(listing_id: int, db: Session = Depends(get_db)):
+    if not db.get(ListingDB, listing_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    return (
+        db.query(ProposalLogDB)
+        .filter(ProposalLogDB.listing_id == listing_id)
+        .order_by(ProposalLogDB.action_at.asc())
+        .all()
+    )
 
 
 @app.delete("/api/listings/{listing_id}")

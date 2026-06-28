@@ -19,6 +19,9 @@ class ListingDB(Base):
     property_type = Column(String, nullable=True)
     listing_id = Column(String, nullable=True)
     class_id = Column(String, nullable=True)
+    proposed_category = Column(String, nullable=True)
+    proposed_by = Column(String, nullable=True)
+    proposed_at = Column(DateTime, nullable=True)
     notes = Column(String)
     date_added = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow)
@@ -32,6 +35,7 @@ class StatusHistoryDB(Base):
     from_category = Column(String, nullable=True)
     to_category = Column(String, nullable=False)
     changed_at = Column(DateTime, nullable=False)
+    changed_by = Column(String, nullable=True)
 
 
 class StatusHistoryResponse(BaseModel):
@@ -40,6 +44,37 @@ class StatusHistoryResponse(BaseModel):
     from_category: Optional[str] = None
     to_category: str
     changed_at: datetime
+    changed_by: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class ProposalLogDB(Base):
+    __tablename__ = "proposal_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    listing_id = Column(Integer, ForeignKey("listings.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_category = Column(String, nullable=False)
+    to_category = Column(String, nullable=False)
+    proposed_by = Column(String, nullable=False)
+    proposed_at = Column(DateTime, nullable=False)
+    action = Column(String, nullable=False)   # proposed | agreed | withdrawn | rejected
+    action_by = Column(String, nullable=False)
+    action_at = Column(DateTime, nullable=False)
+    note = Column(String, nullable=True)
+
+
+class ProposalLogResponse(BaseModel):
+    id: int
+    listing_id: int
+    from_category: str
+    to_category: str
+    proposed_by: str
+    proposed_at: datetime
+    action: str
+    action_by: str
+    action_at: datetime
+    note: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -91,8 +126,29 @@ class ListingResponse(BaseModel):
     property_type: Optional[str] = None
     listing_id: Optional[str] = None
     class_id: Optional[str] = None
+    proposed_category: Optional[str] = None
+    proposed_by: Optional[str] = None
+    proposed_at: Optional[datetime] = None
     notes: Optional[str] = None
     date_added: datetime
     date_updated: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ProposeRequest(BaseModel):
+    new_category: str
+    proposed_by: str
+
+
+class AgreeRequest(BaseModel):
+    agreed_by: str
+
+
+class WithdrawRequest(BaseModel):
+    withdrawn_by: str
+
+
+class RejectRequest(BaseModel):
+    rejected_by: str
+    note: str
