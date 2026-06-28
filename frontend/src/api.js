@@ -57,4 +57,10 @@ export const api = {
       body: JSON.stringify({ rejected_by, note }),
     }),
   getProposalLog: (id) => req(`/listings/${id}/proposal-log`),
+  reorder: (items) =>
+    req('/listings/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items }),
+    }),
 }

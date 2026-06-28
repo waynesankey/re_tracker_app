@@ -22,6 +22,7 @@ class ListingDB(Base):
     proposed_category = Column(String, nullable=True)
     proposed_by = Column(String, nullable=True)
     proposed_at = Column(DateTime, nullable=True)
+    rank = Column(Integer, nullable=True)
     notes = Column(String)
     date_added = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow)
@@ -129,11 +130,21 @@ class ListingResponse(BaseModel):
     proposed_category: Optional[str] = None
     proposed_by: Optional[str] = None
     proposed_at: Optional[datetime] = None
+    rank: Optional[int] = None
     notes: Optional[str] = None
     date_added: datetime
     date_updated: datetime
 
     model_config = {"from_attributes": True}
+
+
+class RankItem(BaseModel):
+    id: int
+    rank: int
+
+
+class ReorderRequest(BaseModel):
+    items: List[RankItem]
 
 
 class ProposeRequest(BaseModel):

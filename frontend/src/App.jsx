@@ -6,6 +6,8 @@ import ListingDetail from './components/ListingDetail'
 import RefreshResultsModal from './components/RefreshResultsModal'
 import ProposalsView from './components/ProposalsView'
 
+export const RANKED_CATEGORIES = ['Interested', 'Showing Requested', 'Visited']
+
 export const CATEGORIES_BY_TYPE = {
   House: ['Inbox', 'New', 'Interested', 'Showing Requested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
   Land:  ['Inbox', 'New', 'Interested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
@@ -160,6 +162,11 @@ export default function App() {
     setSelected(updated)
   }
 
+  const handleReorder = async (items) => {
+    await api.reorder(items)
+    await load()
+  }
+
   const handleReject = async (id, note) => {
     const updated = await api.reject(id, currentUser, note)
     await load()
@@ -209,6 +216,7 @@ export default function App() {
   }
 
   const visibleCategories = propertyType ? CATEGORIES_BY_TYPE[propertyType] : ALL_CATEGORIES
+  const isRanked = !priceChangedFilter && RANKED_CATEGORIES.includes(category)
 
   return (
     <div className="app">
@@ -248,7 +256,13 @@ export default function App() {
             onWithdraw={handleWithdraw}
             onReject={handleReject}
           />
-        : <ListingGrid listings={listings} loading={loading} onSelect={setSelected} />
+        : <ListingGrid
+            listings={listings}
+            loading={loading}
+            onSelect={setSelected}
+            isRanked={isRanked}
+            onReorder={handleReorder}
+          />
       }
       {selected && (
         <ListingDetail

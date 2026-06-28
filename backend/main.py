@@ -16,6 +16,7 @@ from models import (
     PriceHistoryDB, PriceHistoryResponse,
     ProposalLogDB, ProposalLogResponse,
     ProposeRequest, AgreeRequest, WithdrawRequest, RejectRequest,
+    ReorderRequest,
 )
 from scraper import scrape_listing
 
@@ -41,6 +42,7 @@ with engine.connect() as _conn:
     for col in (
         "property_type TEXT", "listing_id TEXT", "class_id TEXT",
         "proposed_category TEXT", "proposed_by TEXT", "proposed_at DATETIME",
+        "rank INTEGER",
     ):
         try:
             _conn.execute(text(f"ALTER TABLE listings ADD COLUMN {col}"))
@@ -122,7 +124,9 @@ def get_listings(
             .subquery()
         )
         q = q.filter(ListingDB.id.in_(changed_ids))
-    if sort == "price":
+    if category in {"Interested", "Showing Requested", "Visited"}:
+        q = q.order_by(ListingDB.rank.asc().nullslast(), ListingDB.date_added.desc())
+    elif sort == "price":
         q = q.order_by(ListingDB.price.asc().nullslast())
     else:
         q = q.order_by(ListingDB.date_added.desc())
@@ -267,6 +271,16 @@ def refresh_prices(db: Session = Depends(get_db)):
         "checked": checked, "updated": updated, "skipped": skipped,
         "changes": changes, "results": results,
     }
+
+
+@app.post("/api/listings/reorder")
+def reorder_listings(body: ReorderRequest, db: Session = Depends(get_db)):
+    for item in body.items:
+        listing = db.get(ListingDB, item.id)
+        if listing:
+            listing.rank = item.rank
+    db.commit()
+    return {"ok": True}
 
 
 @app.put("/api/listings/{listing_id}", response_model=ListingResponse)
@@ -453,6 +467,7 @@ def agree_change(listing_id: int, body: AgreeRequest, db: Session = Depends(get_
     listing.proposed_category = None
     listing.proposed_by = None
     listing.proposed_at = None
+    listing.rank = None  # rank is category-specific, clear it on move
     listing.date_updated = now
     db.commit()
     db.refresh(listing)

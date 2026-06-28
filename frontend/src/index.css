@@ -489,6 +489,70 @@ body {
   color: var(--text-muted);
 }
 
+.card-rank {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+.card--dragging {
+  opacity: 0.4;
+  cursor: grabbing;
+}
+
+.card--drag-over {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.drag-handle {
+  text-align: center;
+  font-size: 16px;
+  color: var(--text-muted);
+  cursor: grab;
+  line-height: 1;
+  margin-bottom: 4px;
+  user-select: none;
+}
+
+.drag-handle:active { cursor: grabbing; }
+
+.rank-arrows {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.rank-btn {
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+}
+
+.rank-btn:hover:not(:disabled) {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.rank-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
 /* ── Modal overlay ── */
 .overlay {
   position: fixed;

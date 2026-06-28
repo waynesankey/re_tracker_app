@@ -14,12 +14,32 @@ function fmtPrice(price) {
   return '$' + Number(price).toLocaleString('en-CA', { maximumFractionDigits: 0 })
 }
 
-export default function ListingCard({ listing, onSelect }) {
+export default function ListingCard({
+  listing, onSelect,
+  isRanked, rank, isTouchOnly,
+  isDragging, isDragOver,
+  onMoveUp, onMoveDown,
+  onDragStart, onDragOver, onDrop, onDragEnd,
+}) {
   const badgeColor = BADGE_COLORS[listing.category] ?? '#6b7280'
   const price = fmtPrice(listing.price)
 
+  const className = [
+    'card',
+    isDragging ? 'card--dragging' : '',
+    isDragOver ? 'card--drag-over' : '',
+  ].filter(Boolean).join(' ')
+
   return (
-    <article className="card" onClick={() => onSelect(listing)}>
+    <article
+      className={className}
+      onClick={() => onSelect(listing)}
+      draggable={!!onDragStart}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
+    >
       <div className="card-photo">
         {listing.image_url ? (
           <img src={listing.image_url} alt="" loading="lazy" />
@@ -29,8 +49,14 @@ export default function ListingCard({ listing, onSelect }) {
         <span className="card-badge" style={{ background: badgeColor }}>
           {listing.category}
         </span>
+        {isRanked && rank != null && (
+          <span className="card-rank">#{rank}</span>
+        )}
       </div>
       <div className="card-body">
+        {onDragStart && (
+          <div className="drag-handle" title="Drag to reorder">⠿</div>
+        )}
         <p className="card-title">{listing.title || listing.url}</p>
         {listing.address && <p className="card-address">{listing.address}</p>}
         {price ? (
@@ -40,6 +66,12 @@ export default function ListingCard({ listing, onSelect }) {
         )}
         {listing.source_domain && (
           <p className="card-source">{listing.source_domain}</p>
+        )}
+        {isRanked && (
+          <div className="rank-arrows" onClick={(e) => e.stopPropagation()}>
+            <button className="rank-btn" onClick={onMoveUp} disabled={!onMoveUp} title="Move up">▲</button>
+            <button className="rank-btn" onClick={onMoveDown} disabled={!onMoveDown} title="Move down">▼</button>
+          </div>
         )}
       </div>
     </article>
