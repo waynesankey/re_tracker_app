@@ -982,3 +982,49 @@ body {
   border-top: 1px solid var(--border);
   margin-top: 2px;
 }
+
+/* ── Responsive: tablet / iPad ── */
+@media (max-width: 1100px) {
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 8px 16px;
+  }
+
+  .topbar-left {
+    width: 100%;
+    padding: 6px 0 4px;
+  }
+
+  .topbar-right {
+    width: 100%;
+    flex-wrap: wrap;
+    padding: 4px 0 8px;
+    gap: 8px;
+  }
+
+  .add-input {
+    width: 180px;
+  }
+}
+
+/* ── Responsive: mobile / small tablet portrait ── */
+@media (max-width: 640px) {
+  .topbar {
+    padding: 6px 12px;
+  }
+
+  .add-input {
+    width: 140px;
+  }
+
+  .filter-tabs {
+    gap: 4px;
+  }
+
+  .tab {
+    font-size: 12px;
+    padding: 3px 10px;
+  }
+}

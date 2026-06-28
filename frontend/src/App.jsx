@@ -83,6 +83,12 @@ export default function App() {
 
   useEffect(() => { load() }, [load])
 
+  // Poll for proposal count changes so the badge updates across browsers
+  useEffect(() => {
+    const id = setInterval(loadProposals, 15000)
+    return () => clearInterval(id)
+  }, [loadProposals])
+
   // Bookmarklet: handle ?url= query param
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
