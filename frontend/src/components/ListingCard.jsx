@@ -6,7 +6,7 @@ const BADGE_COLORS = {
   'Visited': '#7c3aed',
   'Passed': '#dc2626',
   'Offer Made': '#16a34a',
-  'Sold': '#0f172a',
+  'Sold': '#475569',
 }
 
 function fmtPrice(price) {

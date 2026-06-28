@@ -167,6 +167,24 @@ body {
   align-self: center;
 }
 
+/* Category tabs — each carries its own color via --cat-color CSS variable */
+.tab--cat {
+  border-color: var(--cat-color, var(--border));
+  color: var(--cat-color, var(--text-muted));
+}
+
+.tab--cat:hover:not(.active) {
+  background: color-mix(in srgb, var(--cat-color, var(--primary)) 12%, transparent);
+  border-color: var(--cat-color, var(--primary));
+  color: var(--cat-color, var(--primary));
+}
+
+.tab--cat.active {
+  background: var(--cat-color, var(--primary));
+  border-color: var(--cat-color, var(--primary));
+  color: #fff;
+}
+
 /* Price Changes tab — visually separated from category tabs */
 .tab--price-changed {
   border-style: dashed;
@@ -324,21 +342,18 @@ body {
 
 .refresh-btn {
   padding: 6px 14px;
-  border: 1px solid var(--border);
+  border: 1px solid #0e7490;
   border-radius: var(--radius);
-  background: var(--surface);
+  background: #0e7490;
   font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  color: var(--text-muted);
+  color: #fff;
   white-space: nowrap;
   transition: all 0.15s;
 }
 
-.refresh-btn:hover:not(:disabled) {
-  border-color: var(--primary);
-  color: var(--primary);
-}
-
+.refresh-btn:hover:not(:disabled) { background: #0c6478; border-color: #0c6478; }
 .refresh-btn:disabled { opacity: 0.6; cursor: default; }
 
 

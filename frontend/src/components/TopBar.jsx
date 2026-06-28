@@ -1,5 +1,16 @@
 import { useState } from 'react'
 
+const CATEGORY_COLORS = {
+  'Inbox': '#0e7490',
+  'New': '#6b7280',
+  'Interested': '#2563eb',
+  'Showing Requested': '#d97706',
+  'Visited': '#7c3aed',
+  'Passed': '#dc2626',
+  'Offer Made': '#16a34a',
+  'Sold': '#475569',
+}
+
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
   adding, error, refreshing, ingesting, ingestMsg, theme,
@@ -47,7 +58,8 @@ export default function TopBar({
           {categories.map((c) => (
             <button
               key={c}
-              className={`tab${category === c && !priceChangedFilter ? ' active' : ''}`}
+              className={`tab tab--cat${category === c && !priceChangedFilter ? ' active' : ''}`}
+              style={{ '--cat-color': CATEGORY_COLORS[c] ?? '#6b7280' }}
               onClick={() => onCategoryChange(category === c ? '' : c)}
             >
               {c}
