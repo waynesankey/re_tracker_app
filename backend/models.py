@@ -23,6 +23,7 @@ class ListingDB(Base):
     proposed_by = Column(String, nullable=True)
     proposed_at = Column(DateTime, nullable=True)
     rank = Column(Integer, nullable=True)
+    listing_status = Column(String, nullable=True)
     notes = Column(String)
     date_added = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow)
@@ -131,6 +132,7 @@ class ListingResponse(BaseModel):
     proposed_by: Optional[str] = None
     proposed_at: Optional[datetime] = None
     rank: Optional[int] = None
+    listing_status: Optional[str] = None
     notes: Optional[str] = None
     date_added: datetime
     date_updated: datetime
@@ -163,3 +165,7 @@ class WithdrawRequest(BaseModel):
 class RejectRequest(BaseModel):
     rejected_by: str
     note: str
+
+
+class MarkViewedRequest(BaseModel):
+    user: str

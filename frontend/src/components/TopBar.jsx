@@ -14,7 +14,7 @@ const CATEGORY_COLORS = {
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
   adding, error, refreshing, ingesting, ingestMsg, theme,
-  currentUser, proposalCount, showProposals,
+  currentUser, proposalCount, soldUnseen, showProposals,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
   onSortChange, onAdd, onRefresh, onIngest, onToggleTheme,
   onUserChange, onShowProposals, onHideProposals,
@@ -84,7 +84,7 @@ export default function TopBar({
               style={{ '--cat-color': CATEGORY_COLORS[c] ?? '#6b7280' }}
               onClick={() => onCategoryChange(category === c ? '' : c)}
             >
-              {c}
+              {c === 'Sold' && soldUnseen > 0 ? `Sold (${soldUnseen})` : c}
             </button>
           ))}
 

@@ -3,6 +3,12 @@ import re
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlparse
 
+# viewpoint.ca status_id → human-readable label (None = normal active, no badge)
+VP_STATUS_MAP: Dict[str, Optional[str]] = {
+    "5": None,         # For Sale (active) — no badge
+    "6": "Pending",    # Accepted offer, pending close
+}
+
 import requests
 from bs4 import BeautifulSoup
 
@@ -98,7 +104,7 @@ def _viewpoint_rewrite(url: str) -> Tuple[str, Optional[str]]:
 
 
 def _viewpoint_extract(soup: BeautifulSoup) -> Dict:
-    """Extract address, price, and property type from viewpoint.ca cutsheet HTML."""
+    """Extract address, price, property type, and listing status from viewpoint.ca cutsheet HTML."""
     extras: Dict = {}
     h1 = soup.find("h1", class_="cutsheet-address")
     if h1:
@@ -106,6 +112,30 @@ def _viewpoint_extract(soup: BeautifulSoup) -> Dict:
     price_el = soup.find(class_="overlay-price")
     if price_el:
         extras["price"] = _price_from_text(price_el.get_text(strip=True))
+
+    # Status comes from the vp.initCutsheet() JSON embedded in a script tag.
+    # The overlay-status span is JS-rendered so requests() sees the default value.
+    for script in soup.find_all("script"):
+        txt = script.string or ""
+        if "initCutsheet" not in txt:
+            continue
+        start = txt.find("initCutsheet(") + len("initCutsheet(")
+        depth = 0
+        for i, c in enumerate(txt[start:], start):
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        data = json.loads(txt[start : i + 1])
+                        sid = str(data.get("status_id", ""))
+                        if sid in VP_STATUS_MAP:
+                            extras["listing_status"] = VP_STATUS_MAP[sid]
+                    except Exception:
+                        pass
+                    break
+        break
 
     # Property type: land listings have <span><div>Type</div><div>Land & Acreage</div></span>
     # Residential listings have no such span at all.
@@ -166,5 +196,7 @@ def scrape_listing(url: str) -> Dict:
             result["price"] = extras["price"]
         if extras.get("property_type"):
             result["property_type"] = extras["property_type"]
+        if "listing_status" in extras:
+            result["listing_status"] = extras["listing_status"]
 
     return result

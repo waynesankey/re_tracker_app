@@ -16,7 +16,7 @@ from models import (
     PriceHistoryDB, PriceHistoryResponse,
     ProposalLogDB, ProposalLogResponse,
     ProposeRequest, AgreeRequest, WithdrawRequest, RejectRequest,
-    ReorderRequest,
+    ReorderRequest, MarkViewedRequest,
 )
 from scraper import scrape_listing
 
@@ -42,7 +42,7 @@ with engine.connect() as _conn:
     for col in (
         "property_type TEXT", "listing_id TEXT", "class_id TEXT",
         "proposed_category TEXT", "proposed_by TEXT", "proposed_at DATETIME",
-        "rank INTEGER",
+        "rank INTEGER", "listing_status TEXT",
     ):
         try:
             _conn.execute(text(f"ALTER TABLE listings ADD COLUMN {col}"))
@@ -75,6 +75,21 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
     ))
+    _conn.commit()
+
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS sold_views (
+            user TEXT PRIMARY KEY,
+            last_viewed_at TEXT NOT NULL
+        )
+    """))
+    # Pre-populate known users so existing Sold listings don't appear as unseen
+    _seed_ts = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')
+    for _u in ("Wayne", "Christina"):
+        _conn.execute(
+            text("INSERT OR IGNORE INTO sold_views (user, last_viewed_at) VALUES (:u, :t)"),
+            {"u": _u, "t": _seed_ts},
+        )
     _conn.commit()
 
     # Backfill listing_id / class_id from URL for existing viewpoint listings
@@ -146,6 +161,7 @@ def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
         address=meta.get("address"),
         category="New",
         property_type=meta.get("property_type"),
+        listing_status=meta.get("listing_status"),
         date_added=now,
         date_updated=now,
     )
@@ -236,6 +252,13 @@ def refresh_prices(db: Session = Depends(get_db)):
             skipped += 1
             results.append(row(listing, "skipped"))
             continue
+
+        # Update listing_status whenever it changes (None clears a stale Pending badge)
+        if "listing_status" in meta:
+            new_status = meta["listing_status"]
+            if new_status != listing.listing_status:
+                listing.listing_status = new_status
+                listing.date_updated = now
 
         new_price = meta.get("price")
         if new_price is None:
@@ -369,6 +392,7 @@ def ingest_listings(db: Session = Depends(get_db)):
             price=item.get("price"),
             category="Inbox",
             property_type=item["property_type"],
+            listing_status=meta.get("listing_status"),
             date_added=now,
             date_updated=now,
         )
@@ -416,6 +440,25 @@ def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(
     if listing.proposed_category:
         raise HTTPException(status_code=409, detail="A proposal is already pending")
     now = datetime.utcnow()
+
+    # Sold is always a direct, immediate change — no second vote needed
+    if body.new_category == "Sold":
+        old_category = listing.category
+        listing.category = "Sold"
+        listing.rank = None
+        listing.date_updated = now
+        db.add(StatusHistoryDB(
+            listing_id=listing_id,
+            from_category=old_category,
+            to_category="Sold",
+            changed_at=now,
+            changed_by=body.proposed_by,
+        ))
+        db.commit()
+        db.refresh(listing)
+        return listing
+
+    # All other categories go through the two-vote proposal flow
     listing.proposed_category = body.new_category
     listing.proposed_by = body.proposed_by
     listing.proposed_at = now
@@ -432,6 +475,43 @@ def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(
     db.commit()
     db.refresh(listing)
     return listing
+
+
+@app.get("/api/sold/unseen")
+def get_sold_unseen(user: str, db: Session = Depends(get_db)):
+    row = db.execute(
+        text("SELECT last_viewed_at FROM sold_views WHERE user = :u"),
+        {"u": user},
+    ).fetchone()
+    last_viewed = row[0] if row else None
+
+    if last_viewed is None:
+        count = db.query(ListingDB).filter(ListingDB.category == "Sold").count()
+    else:
+        count = db.execute(text("""
+            SELECT COUNT(*) FROM (
+                SELECT listing_id, MAX(changed_at) AS sold_at
+                FROM status_history
+                WHERE to_category = 'Sold'
+                GROUP BY listing_id
+            ) sold_times
+            JOIN listings l ON l.id = sold_times.listing_id
+            WHERE l.category = 'Sold'
+            AND sold_times.sold_at > :last_viewed
+        """), {"last_viewed": last_viewed}).scalar()
+
+    return {"count": count}
+
+
+@app.post("/api/sold/mark-viewed")
+def mark_sold_viewed(body: MarkViewedRequest, db: Session = Depends(get_db)):
+    ts = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')
+    db.execute(
+        text("INSERT OR REPLACE INTO sold_views (user, last_viewed_at) VALUES (:u, :t)"),
+        {"u": body.user, "t": ts},
+    )
+    db.commit()
+    return {"ok": True}
 
 
 @app.post("/api/listings/{listing_id}/agree", response_model=ListingResponse)

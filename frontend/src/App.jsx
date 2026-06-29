@@ -32,6 +32,7 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(getInitialUser)
   const [proposals, setProposals] = useState([])
   const [showProposals, setShowProposals] = useState(false)
+  const [soldUnseen, setSoldUnseen] = useState(0)
   const [propertyType, setPropertyType] = useState('')
   const [category, setCategory] = useState('')
   const [priceChangedFilter, setPriceChangedFilter] = useState(false)
@@ -66,6 +67,14 @@ export default function App() {
     } catch (_) {}
   }, [])
 
+  const loadSoldUnseen = useCallback(async () => {
+    if (!currentUser) return
+    try {
+      const data = await api.getSoldUnseen(currentUser)
+      setSoldUnseen(data.count)
+    } catch (_) {}
+  }, [currentUser])
+
   const load = useCallback(async () => {
     setLoading(true)
     try {
@@ -85,11 +94,13 @@ export default function App() {
 
   useEffect(() => { load() }, [load])
 
-  // Poll for proposal count changes so the badge updates across browsers
+  useEffect(() => { loadSoldUnseen() }, [loadSoldUnseen])
+
+  // Poll for proposal count and sold unseen so badges update across browsers
   useEffect(() => {
-    const id = setInterval(loadProposals, 15000)
+    const id = setInterval(() => { loadProposals(); loadSoldUnseen() }, 15000)
     return () => clearInterval(id)
-  }, [loadProposals])
+  }, [loadProposals, loadSoldUnseen])
 
   // Bookmarklet: handle ?url= query param
   useEffect(() => {
@@ -208,6 +219,10 @@ export default function App() {
   const handleCategoryChange = (cat) => {
     setPriceChangedFilter(false)
     setCategory(cat)
+    if (cat === 'Sold' && currentUser) {
+      api.markSoldViewed(currentUser).catch(() => {})
+      setSoldUnseen(0)
+    }
   }
 
   const handlePriceChangedFilter = () => {
@@ -234,6 +249,7 @@ export default function App() {
         theme={theme}
         currentUser={currentUser}
         proposalCount={proposals.length}
+        soldUnseen={soldUnseen}
         showProposals={showProposals}
         onPropertyTypeChange={handlePropertyTypeChange}
         onCategoryChange={handleCategoryChange}

@@ -60,6 +60,9 @@ function ProposalCard({ listing, currentUser, onSelect, onAgree, onWithdraw, onR
           className="card-badge"
           style={{ background: BADGE_COLORS[listing.category] ?? '#6b7280' }}
         >{listing.category}</span>
+        {listing.listing_status && (
+          <div className="card-status-bar">{listing.listing_status}</div>
+        )}
       </div>
 
       <div className="proposal-card-body">

@@ -57,6 +57,13 @@ export const api = {
       body: JSON.stringify({ rejected_by, note }),
     }),
   getProposalLog: (id) => req(`/listings/${id}/proposal-log`),
+  getSoldUnseen: (user) => req(`/sold/unseen?user=${encodeURIComponent(user)}`),
+  markSoldViewed: (user) =>
+    req('/sold/mark-viewed', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user }),
+    }),
   reorder: (items) =>
     req('/listings/reorder', {
       method: 'POST',

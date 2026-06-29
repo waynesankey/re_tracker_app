@@ -52,6 +52,9 @@ export default function ListingCard({
         {isRanked && rank != null && (
           <span className="card-rank">#{rank}</span>
         )}
+        {listing.listing_status && (
+          <div className="card-status-bar">{listing.listing_status}</div>
+        )}
       </div>
       <div className="card-body">
         {onDragStart && (

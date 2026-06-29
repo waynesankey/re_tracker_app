@@ -489,6 +489,21 @@ body {
   color: var(--text-muted);
 }
 
+.card-status-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 4px 8px;
+  background: #c97c20;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  text-align: center;
+}
+
 .card-rank {
   position: absolute;
   top: 9px;
