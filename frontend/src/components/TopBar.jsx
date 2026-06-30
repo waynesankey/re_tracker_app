@@ -110,6 +110,7 @@ export default function TopBar({
         >
           <option value="date_added">Date Added</option>
           <option value="price">Price ↑</option>
+          <option value="rank">Ranking</option>
         </select>
 
         <button

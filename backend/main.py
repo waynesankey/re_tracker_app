@@ -139,7 +139,7 @@ def get_listings(
             .subquery()
         )
         q = q.filter(ListingDB.id.in_(changed_ids))
-    if category in {"Interested", "Showing Requested", "Visited"}:
+    if sort == "rank":
         q = q.order_by(ListingDB.rank.asc().nullslast(), ListingDB.date_added.desc())
     elif sort == "price":
         q = q.order_by(ListingDB.price.asc().nullslast())

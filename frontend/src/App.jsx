@@ -214,6 +214,11 @@ export default function App() {
       const valid = CATEGORIES_BY_TYPE[type] || ALL_CATEGORIES
       if (!valid.includes(category)) setCategory('')
     }
+    // clicking a type tab (All/Houses/Land) always deselects category, so leave rank sort alone
+    // only clear rank if no category will remain in a ranked context
+    if (!type || !RANKED_CATEGORIES.includes(category)) {
+      setSort((prev) => (prev === 'rank' ? 'date_added' : prev))
+    }
   }
 
   const handleCategoryChange = (cat) => {
@@ -223,6 +228,12 @@ export default function App() {
       api.markSoldViewed(currentUser).catch(() => {})
       setSoldUnseen(0)
     }
+    // Auto-switch sort: ranked categories default to Ranking, others revert from Ranking
+    if (RANKED_CATEGORIES.includes(cat)) {
+      setSort('rank')
+    } else {
+      setSort((prev) => (prev === 'rank' ? 'date_added' : prev))
+    }
   }
 
   const handlePriceChangedFilter = () => {
@@ -231,7 +242,8 @@ export default function App() {
   }
 
   const visibleCategories = propertyType ? CATEGORIES_BY_TYPE[propertyType] : ALL_CATEGORIES
-  const isRanked = !priceChangedFilter && RANKED_CATEGORIES.includes(category)
+  const isRankedCategory = !priceChangedFilter && RANKED_CATEGORIES.includes(category)
+  const isRanked = isRankedCategory && sort === 'rank'
 
   return (
     <div className="app">
@@ -276,6 +288,7 @@ export default function App() {
             listings={listings}
             loading={loading}
             onSelect={setSelected}
+            isRankedCategory={isRankedCategory}
             isRanked={isRanked}
             onReorder={handleReorder}
           />

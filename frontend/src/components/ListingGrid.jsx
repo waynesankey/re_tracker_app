@@ -4,7 +4,7 @@ import ListingCard from './ListingCard'
 const isTouchOnly = typeof window !== 'undefined' &&
   window.matchMedia('(hover: none) and (pointer: coarse)').matches
 
-export default function ListingGrid({ listings, loading, onSelect, isRanked, onReorder }) {
+export default function ListingGrid({ listings, loading, onSelect, isRankedCategory, isRanked, onReorder }) {
   const [localListings, setLocalListings] = useState(listings)
   const [draggingId, setDraggingId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
@@ -81,8 +81,9 @@ export default function ListingGrid({ listings, loading, onSelect, isRanked, onR
           key={l.id}
           listing={l}
           onSelect={onSelect}
+          isRankedCategory={isRankedCategory}
           isRanked={isRanked}
-          rank={isRanked ? idx + 1 : null}
+          rank={l.rank}
           isTouchOnly={isTouchOnly}
           isDragging={draggingId === l.id}
           isDragOver={dragOverId === l.id}

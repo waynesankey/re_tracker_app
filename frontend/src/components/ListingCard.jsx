@@ -16,7 +16,7 @@ function fmtPrice(price) {
 
 export default function ListingCard({
   listing, onSelect,
-  isRanked, rank, isTouchOnly,
+  isRankedCategory, isRanked, rank, isTouchOnly,
   isDragging, isDragOver,
   onMoveUp, onMoveDown,
   onDragStart, onDragOver, onDrop, onDragEnd,
@@ -49,7 +49,7 @@ export default function ListingCard({
         <span className="card-badge" style={{ background: badgeColor }}>
           {listing.category}
         </span>
-        {isRanked && rank != null && (
+        {isRankedCategory && rank != null && (
           <span className="card-rank">#{rank}</span>
         )}
         {listing.listing_status && (
