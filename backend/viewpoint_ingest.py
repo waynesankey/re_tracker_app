@@ -43,16 +43,29 @@ HRM_CITIES = {
 # Price buckets sized to stay under viewpoint.ca's "too many results" limit (~200).
 # Results at exact boundary prices may appear in adjacent buckets; deduped by listing_id+class_id.
 HOUSE_PRICE_BUCKETS = [
-    (600_000,    800_000),
-    (800_000,  1_100_000),
+    (600_000,   625_000),
+    (625_000,   650_000),
+    (650_000,   675_000),
+    (675_000,   700_000),
+    (700_000,   750_000),
+    (750_000,   800_000),
+    (800_000,   900_000),
+    (900_000, 1_000_000),
+    (1_000_000, 1_100_000),
     (1_100_000, 1_500_000),
+    (1_500_000, 2_000_000),
 ]
 
 LAND_PRICE_BUCKETS = [
-    (75_000,   150_000),
-    (150_000,  250_000),
-    (250_000,  400_000),
-    (400_000,  900_000),
+    (100_000, 125_000),
+    (125_000, 150_000),
+    (150_000, 175_000),
+    (175_000, 200_000),
+    (200_000, 225_000),
+    (225_000, 250_000),
+    (250_000, 325_000),
+    (325_000, 400_000),
+    (400_000, 900_000),
 ]
 
 
@@ -95,9 +108,9 @@ def _search_bucket(sess, property_type_param, min_price, max_price):
             timeout=25,
         )
         data = resp.json()
-        if isinstance(data, dict) and "error" in data:
+        if not isinstance(data, dict) or "errors" in data:
             return []
-        return data.get("listings", []) if isinstance(data, dict) else []
+        return data.get("listings", [])
     except Exception:
         return []
 
