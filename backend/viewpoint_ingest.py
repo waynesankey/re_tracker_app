@@ -1,72 +1,25 @@
 import re
-import time
 import requests
-from datetime import date
 
 APIKEY_KID = "1"
 APIKEY_HASH = "d46db3ef736c3c38700ef7f3fe0170dde1d2cbc25e6a296481b1ef75a1459b53"
 CLIENT_VER = "23409"
 VP_BASE = "https://www.viewpoint.ca"
 
-# Halifax Regional Municipality bounding box.
-# Used when the viewpoint.ca API returns lat/lng per listing (primary filter).
-# Coordinates are approximate — HRM is a large municipality stretching far east/west.
-HRM_LAT_MIN = 44.5849
-HRM_LAT_MAX = 44.7746
-HRM_LNG_MIN = -63.6900
-HRM_LNG_MAX = -63.2819
+# HRM bounding box passed to the viewpoint search API.
+# Format: center_lat, center_lng, zoom, sw_lat, sw_lng, ne_lat, ne_lng
+# Wide enough to cover Hammonds Plains/Timberlea/Middle Sackville (W),
+# Musquodoboit/Middle Porters Lake (E), Fall River/Enfield (N), Prospect (S).
+HRM_SEARCH_AREA = "44.7000, -63.4000, 10, 44.4500, -63.9000, 44.9500, -62.9000"
 
-# City-name fallback for when the API doesn't include coordinates.
-# Add entries here if you notice HRM listings being missed.
-HRM_CITIES = {
-    "Halifax", "Dartmouth", "Bedford",
-    "Lower Sackville", "Upper Sackville", "Middle Sackville", "Sackville",
-    "Cole Harbour", "Eastern Passage", "Cow Bay",
-    "Porters Lake", "East Porters Lake", "West Porters Lake", "Middle Porters Lake",
-    "Lake Echo", "Lawrencetown", "Westphal", "Mineville",
-    "Fall River", "Waverley", "Hammonds Plains", "Timberlea",
-    "Tantallon", "Head of St. Margarets Bay", "St. Margarets Bay",
-    "Beechville", "Lucasville", "Fletchers Lake", "Windsor Junction",
-    "Musquodoboit Harbour", "Prospect", "Terence Bay",
-    "Whites Lake", "Harrietsfield", "Herring Cove", "Spryfield",
-    "Sambro", "Seaforth", "West Chezzetcook", "East Chezzetcook",
-    "Grand Desert", "Shearwater", "Burnside", "Woodside",
-    "Portland Hills", "Portland Estates",
-    "Three Fathom Harbour", "Bisset Lake",
-    "Head of Jeddore", "West Jeddore", "East Jeddore",
-    "Lake Charlotte", "Ship Harbour",
-    "Enfield", "Elmsdale",
-    "Stillwater Lake", "Hatchet Lake", "Brookside",
-    "Lakeside", "Beaver Bank", "Middle Musquodoboit",
-}
+# Price filters applied server-side.
+HOUSE_MIN_PRICE = 600_000
+HOUSE_MAX_PRICE = 1_500_000
+LAND_MIN_PRICE  = 100_000
+LAND_MAX_PRICE  = 500_000
 
-# Price buckets sized to stay under viewpoint.ca's "too many results" limit (~200).
-# Results at exact boundary prices may appear in adjacent buckets; deduped by listing_id+class_id.
-HOUSE_PRICE_BUCKETS = [
-    (600_000,   625_000),
-    (625_000,   650_000),
-    (650_000,   675_000),
-    (675_000,   700_000),
-    (700_000,   750_000),
-    (750_000,   800_000),
-    (800_000,   900_000),
-    (900_000, 1_000_000),
-    (1_000_000, 1_100_000),
-    (1_100_000, 1_500_000),
-    (1_500_000, 2_000_000),
-]
-
-LAND_PRICE_BUCKETS = [
-    (100_000, 125_000),
-    (125_000, 150_000),
-    (150_000, 175_000),
-    (175_000, 200_000),
-    (200_000, 225_000),
-    (225_000, 250_000),
-    (250_000, 325_000),
-    (325_000, 400_000),
-    (400_000, 900_000),
-]
+# Minimum lot size in acres — filters out condos, townhouses, tiny urban parcels.
+MIN_LOT_ACRES = 0.25
 
 
 def _make_session():
@@ -92,21 +45,23 @@ def _nonce(sess):
     return resp.json().get("nonce")
 
 
-def _search_bucket(sess, property_type_param, min_price, max_price):
+def _search(sess, property_type_param, min_price, max_price):
+    """Fetch HRM listings for one property type listed in the past week."""
     params = {
-        "parameters[status]": "A",
+        "parameters[status]": "forsale",
         "parameters[property_type]": property_type_param,
+        "parameters[date]": "week",
         "parameters[min_price]": min_price,
         "parameters[max_price]": max_price,
+        "parameters[min_lotsize]": MIN_LOT_ACRES,
+        "parameters[max_lotsize]": 0,
+        "parameters[search_area]": HRM_SEARCH_AREA,
+        "parameters[search_area_type]": "map",
         "nonce": _nonce(sess),
         "CLIENT_VER": CLIENT_VER,
     }
     try:
-        resp = sess.get(
-            f"{VP_BASE}/api/v2/listing/search",
-            params=params,
-            timeout=25,
-        )
+        resp = sess.get(f"{VP_BASE}/api/v2/listing/search", params=params, timeout=25)
         data = resp.json()
         if not isinstance(data, dict) or "errors" in data:
             return []
@@ -115,28 +70,10 @@ def _search_bucket(sess, property_type_param, min_price, max_price):
         return []
 
 
-def _in_hrm(item: dict) -> bool:
-    """Return True if the listing is within Halifax Regional Municipality.
-
-    Uses coordinates if the API provides them (more accurate), otherwise falls
-    back to city-name lookup.
+def fetch_new_hrm_listings() -> list:
     """
-    lat = item.get("lat") or item.get("latitude") or item.get("map_lat")
-    lng = item.get("lng") or item.get("longitude") or item.get("map_lng")
-    if lat is not None and lng is not None:
-        try:
-            return (
-                HRM_LAT_MIN <= float(lat) <= HRM_LAT_MAX
-                and HRM_LNG_MIN <= float(lng) <= HRM_LNG_MAX
-            )
-        except (TypeError, ValueError):
-            pass
-    return item.get("city", "") in HRM_CITIES
-
-
-def fetch_new_hrm_listings(cutoff_date: date) -> list:
-    """
-    Fetch all active HRM listings with list_dt >= cutoff_date.
+    Fetch HRM listings from the past week within the configured price ranges.
+    Deduplication against existing DB entries is handled by the caller.
     Returns list of dicts: listing_id, class_id, url, address, city,
     price, list_dt, property_type ('House' or 'Land').
     """
@@ -144,47 +81,36 @@ def fetch_new_hrm_listings(cutoff_date: date) -> list:
     seen: set = set()
     results = []
 
-    def sweep(vp_type_param, our_type, buckets):
-        for min_p, max_p in buckets:
-            for item in _search_bucket(sess, vp_type_param, min_p, max_p):
-                lid = str(item.get("listing_id") or "")
-                cid = str(item.get("class_id") or "")
-                if not lid or not cid or lid == "None":
-                    continue
-                key = (lid, cid)
-                if key in seen:
-                    continue
+    for vp_type, our_type, min_p, max_p in [
+        ("1",    "House", HOUSE_MIN_PRICE, HOUSE_MAX_PRICE),
+        ("land", "Land",  LAND_MIN_PRICE,  LAND_MAX_PRICE),
+    ]:
+        for item in _search(sess, vp_type, min_p, max_p):
+            lid = str(item.get("listing_id") or "")
+            cid = str(item.get("class_id") or "")
+            if not lid or not cid or lid == "None":
+                continue
+            key = (lid, cid)
+            if key in seen:
+                continue
+            seen.add(key)
 
-                if not _in_hrm(item):
-                    continue
+            raw_url = item.get("url") or f"/cutsheet/{lid}/{cid}"
+            url = raw_url if raw_url.startswith("http") else VP_BASE + raw_url
+            image_url = f"{VP_BASE}/property/cutimageh/{lid}/{cid}/1.jpg?sd=summary"
 
-                raw_dt = (item.get("list_dt") or "")[:10]
-                try:
-                    if date.fromisoformat(raw_dt) < cutoff_date:
-                        continue
-                except ValueError:
-                    continue
+            results.append({
+                "listing_id": lid,
+                "class_id": cid,
+                "url": url,
+                "image_url": image_url,
+                "address": item.get("address") or "",
+                "city": item.get("city", ""),
+                "price": float(item["list_price"]) if item.get("list_price") else None,
+                "list_dt": (item.get("list_dt") or "")[:10],
+                "property_type": our_type,
+            })
 
-                seen.add(key)
-                raw_url = item.get("url") or f"/cutsheet/{lid}/{cid}"
-                url = raw_url if raw_url.startswith("http") else VP_BASE + raw_url
-                image_url = f"{VP_BASE}/property/cutimageh/{lid}/{cid}/1.jpg?sd=summary"
-
-                results.append({
-                    "listing_id": lid,
-                    "class_id": cid,
-                    "url": url,
-                    "image_url": image_url,
-                    "address": item.get("address") or "",
-                    "city": item.get("city", ""),
-                    "price": float(item["list_price"]) if item.get("list_price") else None,
-                    "list_dt": raw_dt,
-                    "property_type": our_type,
-                })
-            time.sleep(0.25)
-
-    sweep("1", "House", HOUSE_PRICE_BUCKETS)
-    sweep("land", "Land", LAND_PRICE_BUCKETS)
     return results
 
 

@@ -347,16 +347,9 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
 @app.post("/api/ingest")
 def ingest_listings(db: Session = Depends(get_db)):
     from viewpoint_ingest import fetch_new_hrm_listings
-    from datetime import date as date_cls, timedelta
+    from datetime import date as date_cls
 
-    row = db.execute(text("SELECT value FROM settings WHERE key='last_ingest_date'")).fetchone()
-    if row:
-        last_date = date_cls.fromisoformat(row[0])
-        cutoff = last_date - timedelta(days=1)   # re-fetch yesterday to catch late postings
-    else:
-        cutoff = date_cls.today() - timedelta(days=7)   # first run: look back 7 days
-
-    new_listings = fetch_new_hrm_listings(cutoff)
+    new_listings = fetch_new_hrm_listings()
 
     existing_keys = {
         (r[0], r[1])
@@ -419,7 +412,7 @@ def ingest_listings(db: Session = Depends(get_db)):
         {"v": date_cls.today().isoformat()},
     )
     db.commit()
-    return {"added": added, "fetched": len(new_listings), "cutoff": cutoff.isoformat()}
+    return {"added": added, "fetched": len(new_listings)}
 
 
 @app.get("/api/proposals", response_model=List[ListingResponse])
