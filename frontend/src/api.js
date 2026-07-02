@@ -15,6 +15,7 @@ export const api = {
     return req(`/listings${qs.toString() ? '?' + qs : ''}`)
   },
   getListingCount: () => req('/listings/count'),
+  getListingsVersion: () => req('/listings/version'),
   getListing: (id) => req(`/listings/${id}`),
   createListing: (url) =>
     req('/listings', {

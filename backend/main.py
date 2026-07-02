@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import List, Optional
@@ -12,7 +13,8 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from database import Base, engine, get_db
+from database import Base, engine, get_db, SessionLocal
+from photos import PHOTOS_DIR, cache_photo
 from models import (
     ListingCreate, ListingDB, ListingResponse, ListingUpdate,
     StatusHistoryDB, StatusHistoryResponse,
@@ -80,6 +82,14 @@ with engine.connect() as _conn:
     ))
     _conn.commit()
 
+    # Enforce rank uniqueness within each {property_type, category} group.
+    _conn.execute(text("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_rank_type_cat
+        ON listings(rank, property_type, category)
+        WHERE rank IS NOT NULL
+    """))
+    _conn.commit()
+
     _conn.execute(text("""
         CREATE TABLE IF NOT EXISTS sold_views (
             user TEXT PRIMARY KEY,
@@ -109,6 +119,44 @@ with engine.connect() as _conn:
                 {"lid": _m.group(1), "cid": _m.group(2), "id": _rid},
             )
     _conn.commit()
+
+
+def _migrate_photos_background():
+    """Download and cache photos for all listings that still have remote image URLs."""
+    try:
+        db = SessionLocal()
+        to_cache = [
+            (l.id, l.image_url) for l in
+            db.query(ListingDB)
+              .filter(ListingDB.image_url.isnot(None))
+              .filter(~ListingDB.image_url.like("/photos/%"))
+              .all()
+        ]
+        db.close()
+
+        if not to_cache:
+            return
+
+        def _download(item):
+            db_id, remote_url = item
+            local_url = cache_photo(db_id, remote_url)
+            if local_url:
+                sess = SessionLocal()
+                try:
+                    listing = sess.get(ListingDB, db_id)
+                    if listing:
+                        listing.image_url = local_url
+                        sess.commit()
+                finally:
+                    sess.close()
+
+        with ThreadPoolExecutor(max_workers=8) as _ex:
+            list(_ex.map(_download, to_cache))
+    except Exception:
+        pass
+
+
+threading.Thread(target=_migrate_photos_background, daemon=True).start()
 
 app = FastAPI(title="Real Estate Tracker")
 
@@ -143,7 +191,7 @@ def get_listings(
         )
         q = q.filter(ListingDB.id.in_(changed_ids))
     if sort == "rank":
-        q = q.order_by(ListingDB.rank.asc().nullslast(), ListingDB.date_added.desc())
+        q = q.order_by(ListingDB.rank.asc().nullslast(), ListingDB.property_type.asc(), ListingDB.date_added.desc())
     elif sort == "price":
         q = q.order_by(ListingDB.price.asc().nullslast())
     else:
@@ -191,6 +239,14 @@ def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
 @app.get("/api/listings/count")
 def get_listing_count(db: Session = Depends(get_db)):
     return {"count": db.query(ListingDB).count()}
+
+
+@app.get("/api/listings/version")
+def get_listings_version(db: Session = Depends(get_db)):
+    """Lightweight endpoint — returns the latest date_updated across all listings.
+    Clients poll this and only refetch the full list when the value changes."""
+    result = db.execute(text("SELECT MAX(date_updated) FROM listings")).scalar()
+    return {"version": result or ""}
 
 
 @app.get("/api/listings/{listing_id}", response_model=ListingResponse)
@@ -314,10 +370,19 @@ def refresh_prices(db: Session = Depends(get_db)):
 
 @app.post("/api/listings/reorder")
 def reorder_listings(body: ReorderRequest, db: Session = Depends(get_db)):
+    now = datetime.utcnow()
+    # Null out ranks first so the unique-per-{type,category} index is never
+    # violated mid-flush when two listings need to swap rank values.
+    listings_map = {}
     for item in body.items:
         listing = db.get(ListingDB, item.id)
         if listing:
-            listing.rank = item.rank
+            listings_map[item.id] = (listing, item.rank)
+            listing.rank = None
+    db.flush()
+    for listing, new_rank in listings_map.values():
+        listing.rank = new_rank
+        listing.date_updated = now
     db.commit()
     return {"ok": True}
 
@@ -406,7 +471,10 @@ def ingest_listings(db: Session = Depends(get_db)):
             date_updated=now,
         )
         db.add(listing)
-        db.flush()
+        db.flush()  # populate listing.id before caching photo
+        local_url = cache_photo(listing.id, image_url)
+        if local_url:
+            listing.image_url = local_url
         db.add(StatusHistoryDB(
             listing_id=listing.id,
             from_category=None,
@@ -644,6 +712,8 @@ def delete_listing(listing_id: int, db: Session = Depends(get_db)):
 
 # Serve built React frontend
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
+
+app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
 
 if os.path.exists(STATIC_DIR):
     assets_dir = os.path.join(STATIC_DIR, "assets")

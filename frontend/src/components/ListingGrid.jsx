@@ -19,7 +19,7 @@ export default function ListingGrid({ listings, loading, onSelect, isRankedCateg
   }
 
   const applyReorder = (reordered) => {
-    setLocalListings(reordered)
+    setLocalListings(reordered.map((l, i) => ({ ...l, rank: i + 1 })))
     onReorder(reordered.map((l, i) => ({ id: l.id, rank: i + 1 })))
   }
 

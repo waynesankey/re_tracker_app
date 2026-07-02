@@ -48,6 +48,7 @@ export default function App() {
   const [ingestMsg, setIngestMsg] = useState(null) // {added, fetched} or {error}
   const refreshMsgTimer = useRef(null)
   const ingestMsgTimer = useRef(null)
+  const listingsVersion = useRef('')
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -87,9 +88,10 @@ export default function App() {
         if (propertyType) params.property_type = propertyType
         if (category) params.category = category
       }
-      const [data, countData] = await Promise.all([api.getListings(params), api.getListingCount(), loadProposals()])
+      const [data, countData, versionData] = await Promise.all([api.getListings(params), api.getListingCount(), api.getListingsVersion(), loadProposals()])
       setListings(data)
       setTotalCount(countData.count)
+      listingsVersion.current = versionData.version || ''
     } finally {
       setLoading(false)
     }
@@ -99,11 +101,23 @@ export default function App() {
 
   useEffect(() => { loadSoldUnseen() }, [loadSoldUnseen])
 
-  // Poll for proposal count and sold unseen so badges update across browsers
+  // Poll for changes across devices. Proposals and sold-unseen always check.
+  // Listings only reload when the server version (MAX date_updated) has changed,
+  // so no-op polls cause zero redraws.
   useEffect(() => {
-    const id = setInterval(() => { loadProposals(); loadSoldUnseen() }, 15000)
+    const id = setInterval(async () => {
+      loadProposals()
+      loadSoldUnseen()
+      try {
+        const { version } = await api.getListingsVersion()
+        if (version && version !== listingsVersion.current) {
+          listingsVersion.current = version
+          load()
+        }
+      } catch (_) {}
+    }, 15000)
     return () => clearInterval(id)
-  }, [loadProposals, loadSoldUnseen])
+  }, [load, loadProposals, loadSoldUnseen])
 
   // Bookmarklet: handle ?url= query param
   useEffect(() => {
