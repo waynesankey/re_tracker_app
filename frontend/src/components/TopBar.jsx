@@ -13,7 +13,7 @@ const CATEGORY_COLORS = {
 
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
-  adding, error, refreshing, ingesting, ingestMsg, theme,
+  totalCount, adding, error, refreshing, refreshProgress, ingesting, ingestMsg, theme,
   currentUser, proposalCount, soldUnseen, showProposals,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
   onSortChange, onAdd, onRefresh, onIngest, onToggleTheme,
@@ -32,7 +32,7 @@ export default function TopBar({
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <span className="logo">Listings</span>
+        <span className="logo">Halifax Listings{totalCount != null ? ` (${totalCount})` : ''}</span>
 
         <div className="user-selector">
           {['Wayne', 'Christina'].map((u) => (
@@ -137,6 +137,21 @@ export default function TopBar({
         >
           {refreshing ? 'Refreshing…' : 'Refresh Prices'}
         </button>
+        {refreshing && (
+          <div className="refresh-progress">
+            <div className="refresh-progress-bar">
+              <div
+                className="refresh-progress-fill"
+                style={{ width: refreshProgress ? `${(refreshProgress.current / refreshProgress.total) * 100}%` : '2%' }}
+              />
+            </div>
+            <span className="refresh-progress-text">
+              {refreshProgress
+                ? `${refreshProgress.current} / ${refreshProgress.total} · ${(refreshProgress.address || '').slice(0, 28)}`
+                : 'Starting…'}
+            </span>
+          </div>
+        )}
 
         <form className="add-form" onSubmit={submit}>
           <input

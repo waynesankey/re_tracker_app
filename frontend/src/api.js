@@ -14,6 +14,7 @@ export const api = {
     )
     return req(`/listings${qs.toString() ? '?' + qs : ''}`)
   },
+  getListingCount: () => req('/listings/count'),
   getListing: (id) => req(`/listings/${id}`),
   createListing: (url) =>
     req('/listings', {
@@ -29,7 +30,33 @@ export const api = {
     }),
   deleteListing: (id) => req(`/listings/${id}`, { method: 'DELETE' }),
   getPriceHistory: (id) => req(`/listings/${id}/price-history`),
-  refreshPrices: () => req('/listings/refresh-prices', { method: 'POST' }),
+  refreshPrices: async (onProgress) => {
+    const r = await fetch(BASE + '/listings/refresh-prices', { method: 'POST' })
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}))
+      throw new Error(data.detail || `HTTP ${r.status}`)
+    }
+    const reader = r.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let finalData = null
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() ?? ''
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        try {
+          const event = JSON.parse(line.slice(6))
+          if (event.type === 'progress' && onProgress) onProgress(event)
+          else if (event.type === 'done') finalData = event
+        } catch (_) {}
+      }
+    }
+    return finalData
+  },
   ingest: () => req('/ingest', { method: 'POST' }),
   getProposals: () => req('/proposals'),
   propose: (id, new_category, proposed_by) =>

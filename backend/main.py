@@ -1,10 +1,13 @@
+import json
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -185,6 +188,11 @@ def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
     return listing
 
 
+@app.get("/api/listings/count")
+def get_listing_count(db: Session = Depends(get_db)):
+    return {"count": db.query(ListingDB).count()}
+
+
 @app.get("/api/listings/{listing_id}", response_model=ListingResponse)
 def get_listing(listing_id: int, db: Session = Depends(get_db)):
     listing = db.get(ListingDB, listing_id)
@@ -219,81 +227,89 @@ def get_price_history(listing_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/listings/refresh-prices")
 def refresh_prices(db: Session = Depends(get_db)):
-    import re
     listings = db.query(ListingDB).filter(ListingDB.category != "Sold").all()
-    checked = 0
-    updated = 0
-    skipped = 0
-    changes = []
-    results = []   # full per-listing report
-    now = datetime.utcnow()
+    to_check = [
+        l for l in listings
+        if l.url and "viewpoint.ca" in l.url and re.search(r"/cutsheet/\d+/\d+", l.url)
+    ]
+    total = len(to_check)
 
-    def row(listing, status, old_price=None, new_price=None):
-        return {
-            "id": listing.id,
-            "address": listing.address,
-            "title": listing.title,
-            "status": status,          # "changed" | "unchanged" | "skipped"
-            "old_price": old_price,
-            "new_price": new_price,
-            "current_price": float(listing.price) if listing.price is not None else None,
-        }
+    def generate():
+        results = []
+        changes = []
+        now = datetime.utcnow()
+        id_to_listing = {l.id: l for l in to_check}
+        scrape_results = {}  # listing_id -> meta dict, or None on failure
 
-    for listing in listings:
-        if not listing.url or "viewpoint.ca" not in listing.url:
-            continue
-        if not re.search(r"/cutsheet/\d+/\d+", listing.url):
-            continue
+        # Scrape all listings in parallel, stream a progress event as each finishes.
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_id = {executor.submit(scrape_listing, l.url): l.id for l in to_check}
+            completed = 0
+            for future in as_completed(future_to_id):
+                lid = future_to_id[future]
+                listing = id_to_listing[lid]
+                completed += 1
+                label = listing.address or listing.title or ""
+                yield f"data: {json.dumps({'type': 'progress', 'current': completed, 'total': total, 'address': label})}\n\n"
+                try:
+                    scrape_results[lid] = future.result()
+                except Exception:
+                    scrape_results[lid] = None
 
-        checked += 1
-        try:
-            meta = scrape_listing(listing.url)
-        except Exception:
-            skipped += 1
-            results.append(row(listing, "skipped"))
-            continue
+        # Apply DB changes single-threaded after all scrapes are done.
+        for listing in to_check:
+            meta = scrape_results.get(listing.id)
+            old_price = float(listing.price) if listing.price is not None else None
 
-        # Update listing_status whenever it changes (None clears a stale Pending badge)
-        if "listing_status" in meta:
-            new_status = meta["listing_status"]
-            if new_status != listing.listing_status:
-                listing.listing_status = new_status
-                listing.date_updated = now
+            if meta is None:
+                results.append({
+                    "id": listing.id, "address": listing.address, "title": listing.title,
+                    "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price,
+                })
+                continue
 
-        new_price = meta.get("price")
-        if new_price is None:
-            skipped += 1
-            results.append(row(listing, "skipped"))
-            continue
+            if "listing_status" in meta:
+                new_status = meta["listing_status"]
+                if new_status != listing.listing_status:
+                    listing.listing_status = new_status
+                    listing.date_updated = now
 
-        old_price = float(listing.price) if listing.price is not None else None
-        if old_price == new_price:
-            results.append(row(listing, "unchanged"))
-            continue
+            new_price = meta.get("price")
+            if new_price is None:
+                results.append({
+                    "id": listing.id, "address": listing.address, "title": listing.title,
+                    "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price,
+                })
+                continue
 
-        db.add(PriceHistoryDB(
-            listing_id=listing.id,
-            old_price=old_price,
-            new_price=new_price,
-            recorded_at=now,
-        ))
-        listing.price = new_price
-        listing.date_updated = now
-        updated += 1
-        results.append(row(listing, "changed", old_price, new_price))
-        changes.append({
-            "id": listing.id,
-            "address": listing.address,
-            "title": listing.title,
-            "old_price": old_price,
-            "new_price": new_price,
-        })
+            if old_price == new_price:
+                results.append({
+                    "id": listing.id, "address": listing.address, "title": listing.title,
+                    "status": "unchanged", "old_price": None, "new_price": None, "current_price": old_price,
+                })
+                continue
 
-    db.commit()
-    return {
-        "checked": checked, "updated": updated, "skipped": skipped,
-        "changes": changes, "results": results,
-    }
+            db.add(PriceHistoryDB(
+                listing_id=listing.id,
+                old_price=old_price,
+                new_price=new_price,
+                recorded_at=now,
+            ))
+            listing.price = new_price
+            listing.date_updated = now
+            results.append({
+                "id": listing.id, "address": listing.address, "title": listing.title,
+                "status": "changed", "old_price": old_price, "new_price": new_price, "current_price": new_price,
+            })
+            changes.append({
+                "id": listing.id, "address": listing.address, "title": listing.title,
+                "old_price": old_price, "new_price": new_price,
+            })
+
+        db.commit()
+        yield f"data: {json.dumps({'type': 'done', 'results': results, 'changes': changes})}\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @app.post("/api/listings/reorder")

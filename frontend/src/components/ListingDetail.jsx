@@ -193,6 +193,14 @@ export default function ListingDetail({
               >
                 {listing.category}
               </span>
+              <a
+                className="btn-view-listing"
+                href={listing.url && listing.url.includes('viewpoint.ca') ? listing.url + '?map=1' : listing.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View Listing ↗
+              </a>
             </div>
           </Field>
 
@@ -390,15 +398,6 @@ export default function ListingDetail({
           </div>
 
           <div className="modal-actions">
-            <a
-              className="view-link"
-              href={listing.url}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              View Listing ↗
-            </a>
-
             <div className="modal-btns">
               {confirmDelete ? (
                 <>

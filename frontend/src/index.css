@@ -356,6 +356,33 @@ body {
 .refresh-btn:hover:not(:disabled) { background: #0c6478; border-color: #0c6478; }
 .refresh-btn:disabled { opacity: 0.6; cursor: default; }
 
+.refresh-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 130px;
+  max-width: 180px;
+}
+.refresh-progress-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.refresh-progress-fill {
+  height: 100%;
+  background: #0e7490;
+  border-radius: 2px;
+  transition: width 0.25s ease;
+}
+.refresh-progress-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 
 .add-btn {
   padding: 6px 18px;
@@ -877,9 +904,21 @@ body {
 .category-display {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   padding: 6px 0;
 }
+
+.btn-view-listing {
+  padding: 4px 12px;
+  border-radius: 4px;
+  background: #bbf7d0;
+  color: #166534;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.btn-view-listing:hover { background: #86efac; }
 
 .category-badge {
   padding: 3px 10px;

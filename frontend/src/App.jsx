@@ -27,6 +27,7 @@ function getInitialUser() {
 
 export default function App() {
   const [listings, setListings] = useState([])
+  const [totalCount, setTotalCount] = useState(null)
   const [loading, setLoading] = useState(true)
   const [theme, setTheme] = useState(getInitialTheme)
   const [currentUser, setCurrentUser] = useState(getInitialUser)
@@ -41,6 +42,7 @@ export default function App() {
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshProgress, setRefreshProgress] = useState(null) // {current, total, address}
   const [refreshResults, setRefreshResults] = useState(null) // {results, runDate} — drives modal
   const [ingesting, setIngesting] = useState(false)
   const [ingestMsg, setIngestMsg] = useState(null) // {added, fetched} or {error}
@@ -85,8 +87,9 @@ export default function App() {
         if (propertyType) params.property_type = propertyType
         if (category) params.category = category
       }
-      const [data] = await Promise.all([api.getListings(params), loadProposals()])
+      const [data, countData] = await Promise.all([api.getListings(params), api.getListingCount(), loadProposals()])
       setListings(data)
+      setTotalCount(countData.count)
     } finally {
       setLoading(false)
     }
@@ -187,15 +190,19 @@ export default function App() {
 
   const handleRefresh = async () => {
     setRefreshing(true)
+    setRefreshProgress(null)
     clearTimeout(refreshMsgTimer.current)
     try {
-      const result = await api.refreshPrices()
+      const result = await api.refreshPrices((evt) => {
+        setRefreshProgress({ current: evt.current, total: evt.total, address: evt.address })
+      })
       await load()
-      setRefreshResults({ results: result.results || [], runDate: new Date() })
+      setRefreshResults({ results: result?.results || [], runDate: new Date() })
     } catch (e) {
       setRefreshResults({ results: [], runDate: new Date(), error: e.message })
     } finally {
       setRefreshing(false)
+      setRefreshProgress(null)
     }
   }
 
@@ -255,7 +262,9 @@ export default function App() {
         sort={sort}
         adding={adding}
         error={addError}
+        totalCount={totalCount}
         refreshing={refreshing}
+        refreshProgress={refreshProgress}
         ingesting={ingesting}
         ingestMsg={ingestMsg}
         theme={theme}
