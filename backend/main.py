@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
@@ -166,6 +166,18 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+RANKED_CATEGORIES = {"Interested", "Showing Requested", "Visited"}
+
+
+def _next_rank(db: Session, property_type: str, category: str, exclude_id: int) -> int:
+    max_rank = db.query(func.max(ListingDB.rank)).filter(
+        ListingDB.property_type == property_type,
+        ListingDB.category == category,
+        ListingDB.id != exclude_id,
+    ).scalar()
+    return (max_rank or 0) + 1
 
 
 @app.get("/api/listings", response_model=List[ListingResponse])
@@ -403,6 +415,10 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
 
     new_category = updates.get("category")
     if new_category and new_category != old_category:
+        if new_category in RANKED_CATEGORIES:
+            listing.rank = _next_rank(db, listing.property_type, new_category, listing_id)
+        else:
+            listing.rank = None
         db.add(StatusHistoryDB(
             listing_id=listing_id,
             from_category=old_category,
@@ -624,7 +640,7 @@ def agree_change(listing_id: int, body: AgreeRequest, db: Session = Depends(get_
     listing.proposed_category = None
     listing.proposed_by = None
     listing.proposed_at = None
-    listing.rank = None  # rank is category-specific, clear it on move
+    listing.rank = _next_rank(db, listing.property_type, new_category, listing_id) if new_category in RANKED_CATEGORIES else None
     listing.date_updated = now
     db.commit()
     db.refresh(listing)
