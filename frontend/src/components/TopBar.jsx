@@ -125,7 +125,7 @@ export default function TopBar({
           <span className={`ingest-msg${ingestMsg.error ? ' ingest-msg--err' : ''}`}>
             {ingestMsg.error
               ? `Error: ${ingestMsg.error}`
-              : `${ingestMsg.added} new · ${ingestMsg.fetched} checked`}
+              : `${ingestMsg.added} new · ${ingestMsg.fetched - ingestMsg.added} existing`}
           </span>
         )}
 
