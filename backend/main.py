@@ -180,6 +180,29 @@ def _next_rank(db: Session, property_type: str, category: str, exclude_id: int) 
     return (max_rank or 0) + 1
 
 
+def _compact_ranks(db: Session, property_type: str, category: str, removed_rank: int):
+    """After a listing leaves a ranked group, close the gap: shift all listings
+    ranked below it (higher number) down by 1.  Uses a two-phase null→assign
+    approach to avoid unique-constraint violations during the shift."""
+    affected = (
+        db.query(ListingDB)
+        .filter(
+            ListingDB.property_type == property_type,
+            ListingDB.category == category,
+            ListingDB.rank > removed_rank,
+        )
+        .all()
+    )
+    if not affected:
+        return
+    new_ranks = {l.id: l.rank - 1 for l in affected}
+    for l in affected:
+        l.rank = None
+    db.flush()
+    for l in affected:
+        l.rank = new_ranks[l.id]
+
+
 @app.get("/api/listings", response_model=List[ListingResponse])
 def get_listings(
     category: Optional[str] = None,
@@ -194,15 +217,19 @@ def get_listings(
     if category:
         q = q.filter(ListingDB.category == category)
     if price_changed:
-        # Listings that have at least one recorded price change (old_price not null)
-        changed_ids = (
-            db.query(PriceHistoryDB.listing_id)
+        # Join to the most-recent price change per listing; sort by that date desc
+        latest_change = (
+            db.query(
+                PriceHistoryDB.listing_id,
+                func.max(PriceHistoryDB.recorded_at).label("last_change"),
+            )
             .filter(PriceHistoryDB.old_price.isnot(None))
-            .distinct()
+            .group_by(PriceHistoryDB.listing_id)
             .subquery()
         )
-        q = q.filter(ListingDB.id.in_(changed_ids))
-    if sort == "rank":
+        q = q.join(latest_change, ListingDB.id == latest_change.c.listing_id)
+        q = q.order_by(latest_change.c.last_change.desc())
+    elif sort == "rank":
         q = q.order_by(ListingDB.rank.asc().nullslast(), ListingDB.property_type.asc(), ListingDB.date_added.desc())
     elif sort == "price":
         q = q.order_by(ListingDB.price.asc().nullslast())
@@ -407,6 +434,8 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
 
     updates = body.model_dump(exclude_unset=True)
     old_category = listing.category
+    old_rank = listing.rank
+    old_property_type = listing.property_type
     old_price = float(listing.price) if listing.price is not None else None
 
     for field, value in updates.items():
@@ -419,6 +448,9 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
             listing.rank = _next_rank(db, listing.property_type, new_category, listing_id)
         else:
             listing.rank = None
+        db.flush()
+        if old_category in RANKED_CATEGORIES and old_rank is not None:
+            _compact_ranks(db, old_property_type, old_category, old_rank)
         db.add(StatusHistoryDB(
             listing_id=listing_id,
             from_category=old_category,
@@ -618,6 +650,8 @@ def agree_change(listing_id: int, body: AgreeRequest, db: Session = Depends(get_
         raise HTTPException(status_code=403, detail="Cannot agree to your own proposal")
     now = datetime.utcnow()
     old_category = listing.category
+    old_rank = listing.rank
+    old_property_type = listing.property_type
     new_category = listing.proposed_category
     db.add(StatusHistoryDB(
         listing_id=listing_id,
@@ -642,6 +676,9 @@ def agree_change(listing_id: int, body: AgreeRequest, db: Session = Depends(get_
     listing.proposed_at = None
     listing.rank = _next_rank(db, listing.property_type, new_category, listing_id) if new_category in RANKED_CATEGORIES else None
     listing.date_updated = now
+    db.flush()
+    if old_category in RANKED_CATEGORIES and old_rank is not None:
+        _compact_ranks(db, old_property_type, old_category, old_rank)
     db.commit()
     db.refresh(listing)
     return listing
@@ -721,7 +758,13 @@ def delete_listing(listing_id: int, db: Session = Depends(get_db)):
     listing = db.get(ListingDB, listing_id)
     if not listing:
         raise HTTPException(status_code=404, detail="Not found")
+    old_category = listing.category
+    old_rank = listing.rank
+    old_property_type = listing.property_type
     db.delete(listing)
+    db.flush()
+    if old_category in RANKED_CATEGORIES and old_rank is not None:
+        _compact_ranks(db, old_property_type, old_category, old_rank)
     db.commit()
     return {"ok": True}
 
