@@ -4,13 +4,14 @@ import TopBar from './components/TopBar'
 import ListingGrid from './components/ListingGrid'
 import ListingDetail from './components/ListingDetail'
 import RefreshResultsModal from './components/RefreshResultsModal'
+import SearchModal from './components/SearchModal'
 import ProposalsView from './components/ProposalsView'
 
 export const RANKED_CATEGORIES = ['Interested', 'Showing Requested', 'Visited']
 
 export const CATEGORIES_BY_TYPE = {
-  House: ['Inbox', 'New', 'Interested', 'Showing Requested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
-  Land:  ['Inbox', 'New', 'Interested', 'Visited', 'Passed', 'Offer Made', 'Sold'],
+  House: ['Inbox', 'New', 'Interested', 'Showing Requested', 'Visited', 'Passed', 'Offer Made', 'Sold', 'Listing Withdrawn'],
+  Land:  ['Inbox', 'New', 'Interested', 'Visited', 'Passed', 'Offer Made', 'Sold', 'Listing Withdrawn'],
 }
 // House is the superset — use it as the "All" list
 const ALL_CATEGORIES = CATEGORIES_BY_TYPE.House
@@ -41,6 +42,8 @@ export default function App() {
   const [selected, setSelected] = useState(null)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState(null)
+  const [listingNotice, setListingNotice] = useState(null)
+  const [searchOpen, setSearchOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [refreshProgress, setRefreshProgress] = useState(null) // {current, total, address}
   const [refreshResults, setRefreshResults] = useState(null) // {results, runDate} — drives modal
@@ -129,6 +132,17 @@ export default function App() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen((o) => !o)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
+
   const handleAdd = async (url) => {
     setAdding(true)
     setAddError(null)
@@ -137,7 +151,13 @@ export default function App() {
       await load()
       setSelected(listing)
     } catch (e) {
-      setAddError(e.message)
+      if (e.status === 409 && e.data?.id) {
+        const existing = listings.find((l) => l.id === e.data.id) || await api.getListing(e.data.id)
+        setListingNotice('Already tracking this listing')
+        setSelected(existing)
+      } else {
+        setAddError(e.message)
+      }
     } finally {
       setAdding(false)
     }
@@ -227,6 +247,37 @@ export default function App() {
     setSelected(listing)
   }
 
+  const handleEmailRealtor = async () => {
+    const all = await api.getListings({ property_type: 'House', category: 'Interested', sort: 'rank' })
+    const top10 = all.slice(0, 10)
+    const fmtPrice = (p) => p != null
+      ? '$' + Number(p).toLocaleString('en-CA', { maximumFractionDigits: 0 })
+      : 'Price TBD'
+    const lines = top10.map((l, i) => {
+      const url = (l.url || '').replace('?map=1', '')
+      return [
+        `#${i + 1} — ${l.address || l.title || '(unknown)'}`,
+        `    Price: ${fmtPrice(l.price)}`,
+        l.listing_id ? `    MLS# ${l.listing_id}` : null,
+        url ? `    ${url}` : null,
+      ].filter(Boolean).join('\n')
+    }).join('\n\n')
+    const date = new Date().toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
+    const subject = `Halifax Houses — Interested (${date})`
+    const body = `Hi,\n\nHere are the houses we're currently most interested in:\n\n${lines}\n\nWayne & Christina`
+    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  }
+
+  // Undo an auto-withdraw from the refresh results modal
+  const handleRestore = async (id, toCategory) => {
+    await api.updateListing(id, { category: toCategory })
+    await load()
+    setRefreshResults((prev) => prev
+      ? { ...prev, results: prev.results.map((r) => r.id === id ? { ...r, status: 'restored' } : r) }
+      : prev
+    )
+  }
+
   const handlePropertyTypeChange = (type) => {
     setPriceChangedFilter(false)
     setPropertyType(type)
@@ -294,6 +345,8 @@ export default function App() {
         onAdd={handleAdd}
         onRefresh={handleRefresh}
         onIngest={handleIngest}
+        onEmailRealtor={handleEmailRealtor}
+        onSearch={() => setSearchOpen(true)}
         onToggleTheme={toggleTheme}
         onUserChange={handleUserChange}
         onShowProposals={() => { setShowProposals(true); setSelected(null); loadProposals() }}
@@ -323,13 +376,14 @@ export default function App() {
           categoriesByType={CATEGORIES_BY_TYPE}
           allCategories={ALL_CATEGORIES}
           currentUser={currentUser}
+          notice={listingNotice}
           onUpdate={handleUpdate}
           onDelete={handleDelete}
           onPropose={handlePropose}
           onAgree={handleAgree}
           onWithdraw={handleWithdraw}
           onReject={handleReject}
-          onClose={() => setSelected(null)}
+          onClose={() => { setSelected(null); setListingNotice(null) }}
         />
       )}
       {refreshResults && (
@@ -337,7 +391,14 @@ export default function App() {
           results={refreshResults.results}
           runDate={refreshResults.runDate}
           onSelectListing={handleSelectById}
+          onRestore={handleRestore}
           onClose={() => setRefreshResults(null)}
+        />
+      )}
+      {searchOpen && (
+        <SearchModal
+          onSelect={handleSelectById}
+          onClose={() => setSearchOpen(false)}
         />
       )}
     </div>

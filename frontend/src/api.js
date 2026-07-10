@@ -3,7 +3,13 @@ const BASE = '/api'
 async function req(path, options = {}) {
   const r = await fetch(BASE + path, options)
   const data = await r.json()
-  if (!r.ok) throw new Error(data.detail || `HTTP ${r.status}`)
+  if (!r.ok) {
+    const detail = data.detail
+    const err = new Error(typeof detail === 'string' ? detail : (detail?.message || `HTTP ${r.status}`))
+    err.status = r.status
+    err.data = detail
+    throw err
+  }
   return data
 }
 
@@ -17,6 +23,7 @@ export const api = {
   getListingCount: () => req('/listings/count'),
   getListingsVersion: () => req('/listings/version'),
   getListing: (id) => req(`/listings/${id}`),
+  searchListings: (q) => req(`/listings/search?q=${encodeURIComponent(q)}`),
   createListing: (url) =>
     req('/listings', {
       method: 'POST',

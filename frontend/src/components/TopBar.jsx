@@ -9,6 +9,7 @@ const CATEGORY_COLORS = {
   'Passed': '#dc2626',
   'Offer Made': '#16a34a',
   'Sold': '#475569',
+  'Listing Withdrawn': '#78716c',
 }
 
 export default function TopBar({
@@ -16,7 +17,7 @@ export default function TopBar({
   totalCount, adding, error, refreshing, refreshProgress, ingesting, ingestMsg, theme,
   currentUser, proposalCount, soldUnseen, showProposals,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
-  onSortChange, onAdd, onRefresh, onIngest, onToggleTheme,
+  onSortChange, onAdd, onRefresh, onIngest, onEmailRealtor, onSearch, onToggleTheme,
   onUserChange, onShowProposals, onHideProposals,
 }) {
   const [input, setInput] = useState('')
@@ -113,8 +114,16 @@ export default function TopBar({
           <option value="rank">Ranking</option>
         </select>
 
+        <button className="tool-btn" onClick={onEmailRealtor} title="Email top 10 Houses — Interested to your realtor">
+          Email Realtor
+        </button>
+
+        <button className="tool-btn" onClick={onSearch} title="Search listings (⌘K)">
+          ⌕ Search
+        </button>
+
         <button
-          className="ingest-btn"
+          className="tool-btn"
           onClick={onIngest}
           disabled={ingesting}
           title="Fetch new HRM listings from viewpoint.ca since last run"
@@ -125,12 +134,16 @@ export default function TopBar({
           <span className={`ingest-msg${ingestMsg.error ? ' ingest-msg--err' : ''}`}>
             {ingestMsg.error
               ? `Error: ${ingestMsg.error}`
-              : `${ingestMsg.added} new · ${ingestMsg.fetched - ingestMsg.added} existing`}
+              : [
+                  `${ingestMsg.added} new`,
+                  ingestMsg.resurrected > 0 ? `${ingestMsg.resurrected} re-listed` : null,
+                  `${ingestMsg.fetched - ingestMsg.added - (ingestMsg.resurrected || 0)} existing`,
+                ].filter(Boolean).join(' · ')}
           </span>
         )}
 
         <button
-          className="refresh-btn"
+          className="tool-btn"
           onClick={onRefresh}
           disabled={refreshing}
           title="Re-fetch prices from viewpoint.ca for all listings"
@@ -156,8 +169,8 @@ export default function TopBar({
         <form className="add-form" onSubmit={submit}>
           <input
             className="add-input"
-            type="url"
-            placeholder="Paste listing URL…"
+            type="text"
+            placeholder="Paste URL or MLS#…"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={adding}
@@ -167,7 +180,7 @@ export default function TopBar({
           </button>
         </form>
 
-        {error && <p className="topbar-error">{error}</p>}
+        {error && <span className="add-msg add-msg--err">{error}</span>}
       </div>
     </header>
   )

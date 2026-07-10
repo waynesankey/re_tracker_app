@@ -9,10 +9,12 @@ const BADGE_COLORS = {
   'Passed': '#dc2626',
   'Offer Made': '#16a34a',
   'Sold': '#475569',
+  'Listing Withdrawn': '#78716c',
 }
 
 export default function ListingDetail({
   listing, categoriesByType, allCategories, currentUser,
+  notice,
   onUpdate, onDelete, onPropose, onAgree, onWithdraw, onReject, onClose,
 }) {
   const [form, setForm] = useState({ ...listing })
@@ -151,6 +153,11 @@ export default function ListingDetail({
         <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
 
         {/* Saved banner — lives outside modal-body so it spans the full width */}
+        {notice && (
+          <div className="saved-banner" role="status">
+            {notice}
+          </div>
+        )}
         {showSaved && (
           <div className="saved-banner" role="status">
             Changes saved ✓

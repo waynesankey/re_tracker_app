@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import func, text
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
@@ -170,6 +170,10 @@ app.add_middleware(
 
 RANKED_CATEGORIES = {"Interested", "Showing Requested", "Visited"}
 
+# Categories that bypass the two-vote proposal flow and move immediately.
+DIRECT_MOVE_CATEGORIES = {"Sold", "Listing Withdrawn"}
+
+
 
 def _next_rank(db: Session, property_type: str, category: str, exclude_id: int) -> int:
     max_rank = db.query(func.max(ListingDB.rank)).filter(
@@ -238,20 +242,68 @@ def get_listings(
     return q.all()
 
 
+_MLS_RE = re.compile(r'^(?:mls[#:\s]*)?\s*(\d{8,9})\s*$', re.IGNORECASE)
+_VP_BASE = "https://www.viewpoint.ca"
+
+def _resolve_mls(mls_id: str):
+    """Try Viewpoint class_ids in order; return (url, meta) for the first live listing."""
+    for cid in ("1", "5", "2", "3", "4", "6"):
+        candidate = f"{_VP_BASE}/cutsheet/{mls_id}/{cid}"
+        try:
+            m = scrape_listing(candidate)
+            if m.get("price") is not None or m.get("address"):
+                return candidate, m, cid
+        except Exception:
+            pass
+    return None, None, None
+
+
 @app.post("/api/listings", response_model=ListingResponse)
 def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
-    meta = scrape_listing(body.url)
+    raw = body.url.strip()
+    resolved_listing_id = None
+    resolved_class_id = None
+
+    mls_match = _MLS_RE.match(raw)
+    if mls_match:
+        mls_id = mls_match.group(1)
+        url, meta, resolved_class_id = _resolve_mls(mls_id)
+        if not url:
+            raise HTTPException(status_code=404, detail=f"MLS# {mls_id} not found on Viewpoint")
+        resolved_listing_id = mls_id
+    else:
+        url = raw
+        meta = scrape_listing(url)
+        # Extract MLS ids from viewpoint cutsheet URLs that were pasted directly
+        from viewpoint_ingest import extract_ids_from_url
+        resolved_listing_id, resolved_class_id = extract_ids_from_url(url)
+
+    # Duplicate check by address — more reliable than listing_id since a property
+    # can be re-listed with a new MLS number but the address never changes.
+    scraped_address = (meta.get("address") or "").strip()
+    if scraped_address:
+        existing = db.query(ListingDB).filter(
+            func.lower(ListingDB.address) == scraped_address.lower()
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=409,
+                detail={"id": existing.id, "message": f"Already tracking: {existing.address} ({existing.property_type} · {existing.category})"},
+            )
+
     now = datetime.utcnow()
     listing = ListingDB(
-        url=body.url,
+        url=url,
         source_domain=meta.get("source_domain"),
         image_url=meta.get("image_url"),
         title=meta.get("title"),
         price=meta.get("price"),
-        address=meta.get("address"),
+        address=scraped_address or None,
         category="New",
         property_type=meta.get("property_type"),
         listing_status=meta.get("listing_status"),
+        listing_id=resolved_listing_id,
+        class_id=resolved_class_id,
         date_added=now,
         date_updated=now,
     )
@@ -288,6 +340,31 @@ def get_listings_version(db: Session = Depends(get_db)):
     return {"version": result or ""}
 
 
+@app.get("/api/listings/search", response_model=List[ListingResponse])
+def search_listings(q: str = "", db: Session = Depends(get_db)):
+    q = q.strip()
+    if len(q) < 2:
+        return []
+    mls_match = _MLS_RE.match(q)
+    if mls_match:
+        return (
+            db.query(ListingDB)
+            .filter(ListingDB.listing_id == mls_match.group(1))
+            .all()
+        )
+    pattern = f"%{q.lower()}%"
+    return (
+        db.query(ListingDB)
+        .filter(or_(
+            func.lower(ListingDB.address).like(pattern),
+            func.lower(ListingDB.title).like(pattern),
+        ))
+        .order_by(ListingDB.address.asc())
+        .limit(10)
+        .all()
+    )
+
+
 @app.get("/api/listings/{listing_id}", response_model=ListingResponse)
 def get_listing(listing_id: int, db: Session = Depends(get_db)):
     listing = db.get(ListingDB, listing_id)
@@ -322,7 +399,9 @@ def get_price_history(listing_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/listings/refresh-prices")
 def refresh_prices(db: Session = Depends(get_db)):
-    listings = db.query(ListingDB).filter(ListingDB.category != "Sold").all()
+    listings = db.query(ListingDB).filter(
+        ListingDB.category.notin_(["Sold", "Listing Withdrawn"])
+    ).all()
     to_check = [
         l for l in listings
         if l.url and "viewpoint.ca" in l.url and re.search(r"/cutsheet/\d+/\d+", l.url)
@@ -356,11 +435,14 @@ def refresh_prices(db: Session = Depends(get_db)):
             meta = scrape_results.get(listing.id)
             old_price = float(listing.price) if listing.price is not None else None
 
+            base = {
+                "id": listing.id, "address": listing.address, "title": listing.title,
+                "property_type": listing.property_type, "category": listing.category,
+            }
+
             if meta is None:
-                results.append({
-                    "id": listing.id, "address": listing.address, "title": listing.title,
-                    "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price,
-                })
+                # Scraper threw an exception (timeout / network error) — transient, don't auto-withdraw
+                results.append({**base, "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price})
                 continue
 
             if "listing_status" in meta:
@@ -371,17 +453,28 @@ def refresh_prices(db: Session = Depends(get_db)):
 
             new_price = meta.get("price")
             if new_price is None:
-                results.append({
-                    "id": listing.id, "address": listing.address, "title": listing.title,
-                    "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price,
-                })
+                # Listing page loaded but returned no price → listing no longer available on Viewpoint.
+                # Sold and Listing Withdrawn are already excluded from to_check, so auto-withdraw all others.
+                old_category = listing.category
+                old_rank = listing.rank
+                listing.category = "Listing Withdrawn"
+                listing.rank = None
+                listing.date_updated = now
+                db.add(StatusHistoryDB(
+                    listing_id=listing.id,
+                    from_category=old_category,
+                    to_category="Listing Withdrawn",
+                    changed_at=now,
+                ))
+                db.flush()
+                if old_category in RANKED_CATEGORIES and old_rank is not None:
+                    _compact_ranks(db, listing.property_type, old_category, old_rank)
+                results.append({**base, "category": old_category, "status": "withdrawn",
+                                "old_price": None, "new_price": None, "current_price": old_price})
                 continue
 
             if old_price == new_price:
-                results.append({
-                    "id": listing.id, "address": listing.address, "title": listing.title,
-                    "status": "unchanged", "old_price": None, "new_price": None, "current_price": old_price,
-                })
+                results.append({**base, "status": "unchanged", "old_price": None, "new_price": None, "current_price": old_price})
                 continue
 
             db.add(PriceHistoryDB(
@@ -392,10 +485,7 @@ def refresh_prices(db: Session = Depends(get_db)):
             ))
             listing.price = new_price
             listing.date_updated = now
-            results.append({
-                "id": listing.id, "address": listing.address, "title": listing.title,
-                "status": "changed", "old_price": old_price, "new_price": new_price, "current_price": new_price,
-            })
+            results.append({**base, "status": "changed", "old_price": old_price, "new_price": new_price, "current_price": new_price})
             changes.append({
                 "id": listing.id, "address": listing.address, "title": listing.title,
                 "old_price": old_price, "new_price": new_price,
@@ -488,20 +578,79 @@ def ingest_listings(db: Session = Depends(get_db)):
         )).fetchall()
     }
 
+    # Build an address lookup for inactive listings so re-listed properties
+    # can be resurrected rather than duplicated.
+    inactive = db.query(ListingDB).filter(
+        ListingDB.category.in_(["Sold", "Listing Withdrawn"])
+    ).all()
+    inactive_by_address = {
+        l.address.lower().strip(): l
+        for l in inactive
+        if l.address
+    }
+
     added = 0
+    resurrected = 0
     now = datetime.utcnow()
     for item in new_listings:
         key = (item["listing_id"], item["class_id"])
         if key in existing_keys:
             continue
 
-        # Scrape the listing page to get the real photo and title
+        # Scrape first — we need the canonical address for resurrection detection.
         try:
             meta = scrape_listing(item["url"])
         except Exception:
             meta = {}
         image_url = meta.get("image_url") or item.get("image_url")
         title = meta.get("title") or None
+
+        # Check if this property was previously Sold or Listing Withdrawn.
+        scraped_address = (meta.get("address") or "").lower().strip()
+        api_address = (item.get("address") or "").lower().strip()
+        existing_inactive = (
+            inactive_by_address.get(scraped_address) or
+            inactive_by_address.get(api_address)
+        )
+
+        if existing_inactive:
+            # Resurrect: update the existing record back to Inbox with the new listing details.
+            old_category = existing_inactive.category
+            old_price = float(existing_inactive.price) if existing_inactive.price is not None else None
+            new_price = item.get("price")
+            existing_inactive.listing_id = item["listing_id"]
+            existing_inactive.class_id = item["class_id"]
+            existing_inactive.url = item["url"]
+            existing_inactive.property_type = item["property_type"]
+            existing_inactive.category = "Inbox"
+            existing_inactive.rank = None
+            existing_inactive.listing_status = meta.get("listing_status")
+            existing_inactive.date_updated = now
+            if title:
+                existing_inactive.title = title
+            # Refresh photo with new listing image
+            local_url = cache_photo(existing_inactive.id, image_url)
+            existing_inactive.image_url = local_url or image_url
+            db.add(StatusHistoryDB(
+                listing_id=existing_inactive.id,
+                from_category=old_category,
+                to_category="Inbox",
+                changed_at=now,
+            ))
+            if new_price is not None and float(new_price) != old_price:
+                existing_inactive.price = new_price
+                db.add(PriceHistoryDB(
+                    listing_id=existing_inactive.id,
+                    old_price=old_price,
+                    new_price=float(new_price),
+                    recorded_at=now,
+                ))
+            # Remove from lookup so a second match in the same run doesn't double-resurrect
+            inactive_by_address.pop(scraped_address, None)
+            inactive_by_address.pop(api_address, None)
+            existing_keys.add(key)
+            resurrected += 1
+            continue
 
         listing = ListingDB(
             url=item["url"],
@@ -544,7 +693,7 @@ def ingest_listings(db: Session = Depends(get_db)):
         {"v": date_cls.today().isoformat()},
     )
     db.commit()
-    return {"added": added, "fetched": len(new_listings)}
+    return {"added": added, "resurrected": resurrected, "fetched": len(new_listings)}
 
 
 @app.get("/api/proposals", response_model=List[ListingResponse])
@@ -566,19 +715,24 @@ def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(
         raise HTTPException(status_code=409, detail="A proposal is already pending")
     now = datetime.utcnow()
 
-    # Sold is always a direct, immediate change — no second vote needed
-    if body.new_category == "Sold":
+    # Sold and Listing Withdrawn are direct, immediate changes — no second vote needed
+    if body.new_category in DIRECT_MOVE_CATEGORIES:
         old_category = listing.category
-        listing.category = "Sold"
+        old_rank = listing.rank
+        old_property_type = listing.property_type
+        listing.category = body.new_category
         listing.rank = None
         listing.date_updated = now
         db.add(StatusHistoryDB(
             listing_id=listing_id,
             from_category=old_category,
-            to_category="Sold",
+            to_category=body.new_category,
             changed_at=now,
             changed_by=body.proposed_by,
         ))
+        db.flush()
+        if old_category in RANKED_CATEGORIES and old_rank is not None:
+            _compact_ranks(db, old_property_type, old_category, old_rank)
         db.commit()
         db.refresh(listing)
         return listing
