@@ -17,6 +17,16 @@ function fmtPrice(p) {
   return p != null ? '$' + Number(p).toLocaleString('en-CA', { maximumFractionDigits: 0 }) : null
 }
 
+function extractCity(listing) {
+  const title = listing.title || ''
+  const i = title.lastIndexOf(',')
+  if (i === -1) return null
+  const city = title.slice(i + 1).trim()
+  if (!city) return null
+  if ((listing.address || '').toLowerCase().includes(city.toLowerCase())) return null
+  return city
+}
+
 export default function SearchModal({ onSelect, onClose }) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -87,7 +97,10 @@ export default function SearchModal({ onSelect, onClose }) {
                 onClick={() => pick(l)}
                 onMouseEnter={() => setActiveIdx(i)}
               >
-                <span className="search-result-address">{l.address || l.title || '—'}</span>
+                <span className="search-result-address">
+                  {l.address || l.title || '—'}
+                  {extractCity(l) && <span className="search-result-city">{extractCity(l)}</span>}
+                </span>
                 <span className="search-result-meta">
                   {fmtPrice(l.price) && <span className="search-result-price">{fmtPrice(l.price)}</span>}
                   {l.listing_id && <span className="search-result-mls">MLS# {l.listing_id}</span>}
