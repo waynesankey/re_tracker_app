@@ -4,6 +4,7 @@ import TopBar from './components/TopBar'
 import ListingGrid from './components/ListingGrid'
 import ListingDetail from './components/ListingDetail'
 import RefreshResultsModal from './components/RefreshResultsModal'
+import IngestResultsModal from './components/IngestResultsModal'
 import SearchModal from './components/SearchModal'
 import ProposalsView from './components/ProposalsView'
 
@@ -49,6 +50,7 @@ export default function App() {
   const [refreshResults, setRefreshResults] = useState(null) // {results, runDate} — drives modal
   const [ingesting, setIngesting] = useState(false)
   const [ingestMsg, setIngestMsg] = useState(null) // {added, fetched} or {error}
+  const [ingestResult, setIngestResult] = useState(null) // full result for modal
   const refreshMsgTimer = useRef(null)
   const ingestMsgTimer = useRef(null)
   const listingsVersion = useRef('')
@@ -180,9 +182,10 @@ export default function App() {
     setIngestMsg(null)
     clearTimeout(ingestMsgTimer.current)
     try {
-      const result = await api.ingest()
+      const result = await api.ingest(currentUser)
       await load()
-      setIngestMsg({ added: result.added, fetched: result.fetched })
+      setIngestMsg({ added: result.added, fetched: result.fetched, resurrected: result.resurrected })
+      setIngestResult(result)
     } catch (e) {
       setIngestMsg({ error: e.message })
     } finally {
@@ -384,6 +387,12 @@ export default function App() {
           onWithdraw={handleWithdraw}
           onReject={handleReject}
           onClose={() => { setSelected(null); setListingNotice(null) }}
+        />
+      )}
+      {ingestResult && (
+        <IngestResultsModal
+          result={ingestResult}
+          onClose={() => setIngestResult(null)}
         />
       )}
       {refreshResults && (

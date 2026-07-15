@@ -65,7 +65,12 @@ export const api = {
     }
     return finalData
   },
-  ingest: () => req('/ingest', { method: 'POST' }),
+  ingest: (runBy) => req('/ingest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ run_by: runBy || null }),
+  }),
+  getIngestHistory: () => req('/ingest/history'),
   getProposals: () => req('/proposals'),
   propose: (id, new_category, proposed_by) =>
     req(`/listings/${id}/propose`, {

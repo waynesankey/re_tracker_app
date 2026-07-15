@@ -59,6 +59,20 @@ def _price_from_jsonld(soup: BeautifulSoup) -> Optional[float]:
     return None
 
 
+def _waterfront_from_jsonld(soup: BeautifulSoup) -> Optional[bool]:
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        for feature in data.get("amenityFeature", []):
+            if isinstance(feature, dict) and feature.get("name") == "Waterfront":
+                return bool(feature.get("value"))
+    return None
+
+
 def _price_from_text(text: Optional[str]) -> Optional[float]:
     if not text:
         return None
@@ -198,5 +212,8 @@ def scrape_listing(url: str) -> Dict:
             result["property_type"] = extras["property_type"]
         if "listing_status" in extras:
             result["listing_status"] = extras["listing_status"]
+        waterfront = _waterfront_from_jsonld(soup)
+        if waterfront is not None:
+            result["waterfront"] = waterfront
 
     return result

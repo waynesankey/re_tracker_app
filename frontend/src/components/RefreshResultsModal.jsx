@@ -33,7 +33,7 @@ export default function RefreshResultsModal({ results, runDate, onSelectListing,
   const total = results ? results.length : 0
 
   return (
-    <div className="overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="overlay">
       <div className="modal modal--narrow" role="dialog" aria-modal="true">
         <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
         <div className="modal-body">

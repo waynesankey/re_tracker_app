@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Integer, String, Numeric, DateTime, ForeignKey
 from pydantic import BaseModel
 from database import Base
 
@@ -24,6 +24,7 @@ class ListingDB(Base):
     proposed_at = Column(DateTime, nullable=True)
     rank = Column(Integer, nullable=True)
     listing_status = Column(String, nullable=True)
+    waterfront = Column(Boolean, nullable=True)
     notes = Column(String)
     date_added = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow)
@@ -133,11 +134,44 @@ class ListingResponse(BaseModel):
     proposed_at: Optional[datetime] = None
     rank: Optional[int] = None
     listing_status: Optional[str] = None
+    waterfront: Optional[bool] = None
     notes: Optional[str] = None
     date_added: datetime
     date_updated: datetime
 
     model_config = {"from_attributes": True}
+
+
+class IngestLogDB(Base):
+    __tablename__ = "ingest_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    run_at = Column(DateTime, nullable=False)
+    run_by = Column(String, nullable=True)
+    viewpoint_total = Column(Integer, nullable=True)   # before price/lot filter
+    price_lot_filtered = Column(Integer, nullable=True) # after price+lot filter
+    already_tracked = Column(Integer, nullable=True)   # skipped — in DB
+    waterfront_skipped = Column(Integer, nullable=True) # skipped — not waterfront
+    resurrected = Column(Integer, nullable=True)
+    added = Column(Integer, nullable=True)
+
+
+class IngestLogResponse(BaseModel):
+    id: int
+    run_at: datetime
+    run_by: Optional[str] = None
+    viewpoint_total: Optional[int] = None
+    price_lot_filtered: Optional[int] = None
+    already_tracked: Optional[int] = None
+    waterfront_skipped: Optional[int] = None
+    resurrected: Optional[int] = None
+    added: Optional[int] = None
+
+    model_config = {"from_attributes": True}
+
+
+class IngestRequest(BaseModel):
+    run_by: Optional[str] = None
 
 
 class RankItem(BaseModel):

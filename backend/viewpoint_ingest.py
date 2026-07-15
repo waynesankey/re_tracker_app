@@ -45,6 +45,27 @@ def _nonce(sess):
     return resp.json().get("nonce")
 
 
+def _count_unfiltered(sess, property_type_param):
+    """Count all active HRM listings this week for a type, no price/lot filter."""
+    params = {
+        "parameters[status]": "forsale",
+        "parameters[property_type]": property_type_param,
+        "parameters[date]": "week",
+        "parameters[search_area]": HRM_SEARCH_AREA,
+        "parameters[search_area_type]": "map",
+        "nonce": _nonce(sess),
+        "CLIENT_VER": CLIENT_VER,
+    }
+    try:
+        resp = sess.get(f"{VP_BASE}/api/v2/listing/search", params=params, timeout=25)
+        data = resp.json()
+        if not isinstance(data, dict) or "errors" in data:
+            return None
+        return len(data.get("listings", []))
+    except Exception:
+        return None
+
+
 def _search(sess, property_type_param, min_price, max_price):
     """Fetch HRM listings for one property type listed in the past week."""
     params = {
@@ -70,16 +91,26 @@ def _search(sess, property_type_param, min_price, max_price):
         return []
 
 
-def fetch_new_hrm_listings() -> list:
+def fetch_new_hrm_listings() -> dict:
     """
     Fetch HRM listings from the past week within the configured price ranges.
     Deduplication against existing DB entries is handled by the caller.
-    Returns list of dicts: listing_id, class_id, url, address, city,
-    price, list_dt, property_type ('House' or 'Land').
+    Returns:
+      {
+        "listings": [...],          # price+lot filtered, ready for processing
+        "viewpoint_total": int,     # total new listings this week before any filter
+        "price_lot_filtered": int,  # count after price+lot filter
+      }
     """
     sess = _make_session()
+
+    # Unfiltered counts (no price/lot constraints) — for reporting only.
+    house_total = _count_unfiltered(sess, "1") or 0
+    land_total  = _count_unfiltered(sess, "land") or 0
+
     seen: set = set()
     results = []
+    price_lot_filtered = 0
 
     for vp_type, our_type, min_p, max_p in [
         ("1",    "House", HOUSE_MIN_PRICE, HOUSE_MAX_PRICE),
@@ -94,6 +125,7 @@ def fetch_new_hrm_listings() -> list:
             if key in seen:
                 continue
             seen.add(key)
+            price_lot_filtered += 1
 
             raw_url = item.get("url") or f"/cutsheet/{lid}/{cid}"
             url = raw_url if raw_url.startswith("http") else VP_BASE + raw_url
@@ -111,7 +143,11 @@ def fetch_new_hrm_listings() -> list:
                 "property_type": our_type,
             })
 
-    return results
+    return {
+        "listings": results,
+        "viewpoint_total": house_total + land_total,
+        "price_lot_filtered": price_lot_filtered,
+    }
 
 
 def extract_ids_from_url(url: str):

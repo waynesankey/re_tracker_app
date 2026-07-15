@@ -20,6 +20,7 @@ from models import (
     StatusHistoryDB, StatusHistoryResponse,
     PriceHistoryDB, PriceHistoryResponse,
     ProposalLogDB, ProposalLogResponse,
+    IngestLogDB, IngestLogResponse, IngestRequest,
     ProposeRequest, AgreeRequest, WithdrawRequest, RejectRequest,
     ReorderRequest, MarkViewedRequest,
 )
@@ -47,7 +48,7 @@ with engine.connect() as _conn:
     for col in (
         "property_type TEXT", "listing_id TEXT", "class_id TEXT",
         "proposed_category TEXT", "proposed_by TEXT", "proposed_at DATETIME",
-        "rank INTEGER", "listing_status TEXT",
+        "rank INTEGER", "listing_status TEXT", "waterfront BOOLEAN",
     ):
         try:
             _conn.execute(text(f"ALTER TABLE listings ADD COLUMN {col}"))
@@ -80,6 +81,21 @@ with engine.connect() as _conn:
     _conn.execute(text(
         "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
     ))
+    _conn.commit()
+
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS ingest_log (
+            id INTEGER PRIMARY KEY,
+            run_at DATETIME NOT NULL,
+            run_by TEXT,
+            viewpoint_total INTEGER,
+            price_lot_filtered INTEGER,
+            already_tracked INTEGER,
+            waterfront_skipped INTEGER,
+            resurrected INTEGER,
+            added INTEGER
+        )
+    """))
     _conn.commit()
 
     # Enforce rank uniqueness within each {property_type, category} group.
@@ -302,6 +318,7 @@ def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
         category="New",
         property_type=meta.get("property_type"),
         listing_status=meta.get("listing_status"),
+        waterfront=meta.get("waterfront"),
         listing_id=resolved_listing_id,
         class_id=resolved_class_id,
         date_added=now,
@@ -473,6 +490,12 @@ def refresh_prices(db: Session = Depends(get_db)):
                                 "old_price": None, "new_price": None, "current_price": old_price})
                 continue
 
+            # Always keep waterfront in sync regardless of price change
+            wf = meta.get("waterfront")
+            if wf is not None and wf != listing.waterfront:
+                listing.waterfront = wf
+                listing.date_updated = now
+
             if old_price == new_price:
                 results.append({**base, "status": "unchanged", "old_price": None, "new_price": None, "current_price": old_price})
                 continue
@@ -564,11 +587,14 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
 
 
 @app.post("/api/ingest")
-def ingest_listings(db: Session = Depends(get_db)):
+def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends(get_db)):
     from viewpoint_ingest import fetch_new_hrm_listings
     from datetime import date as date_cls
 
-    new_listings = fetch_new_hrm_listings()
+    fetch_result = fetch_new_hrm_listings()
+    new_listings = fetch_result["listings"]
+    viewpoint_total = fetch_result["viewpoint_total"]
+    price_lot_filtered = fetch_result["price_lot_filtered"]
 
     existing_keys = {
         (r[0], r[1])
@@ -578,8 +604,6 @@ def ingest_listings(db: Session = Depends(get_db)):
         )).fetchall()
     }
 
-    # Build an address lookup for inactive listings so re-listed properties
-    # can be resurrected rather than duplicated.
     inactive = db.query(ListingDB).filter(
         ListingDB.category.in_(["Sold", "Listing Withdrawn"])
     ).all()
@@ -591,13 +615,16 @@ def ingest_listings(db: Session = Depends(get_db)):
 
     added = 0
     resurrected = 0
+    already_tracked = 0
+    waterfront_skipped = 0
     now = datetime.utcnow()
+
     for item in new_listings:
         key = (item["listing_id"], item["class_id"])
         if key in existing_keys:
+            already_tracked += 1
             continue
 
-        # Scrape first — we need the canonical address for resurrection detection.
         try:
             meta = scrape_listing(item["url"])
         except Exception:
@@ -605,7 +632,6 @@ def ingest_listings(db: Session = Depends(get_db)):
         image_url = meta.get("image_url") or item.get("image_url")
         title = meta.get("title") or None
 
-        # Check if this property was previously Sold or Listing Withdrawn.
         scraped_address = (meta.get("address") or "").lower().strip()
         api_address = (item.get("address") or "").lower().strip()
         existing_inactive = (
@@ -614,7 +640,6 @@ def ingest_listings(db: Session = Depends(get_db)):
         )
 
         if existing_inactive:
-            # Resurrect: update the existing record back to Inbox with the new listing details.
             old_category = existing_inactive.category
             old_price = float(existing_inactive.price) if existing_inactive.price is not None else None
             new_price = item.get("price")
@@ -625,10 +650,11 @@ def ingest_listings(db: Session = Depends(get_db)):
             existing_inactive.category = "Inbox"
             existing_inactive.rank = None
             existing_inactive.listing_status = meta.get("listing_status")
+            if meta.get("waterfront") is not None:
+                existing_inactive.waterfront = meta.get("waterfront")
             existing_inactive.date_updated = now
             if title:
                 existing_inactive.title = title
-            # Refresh photo with new listing image
             local_url = cache_photo(existing_inactive.id, image_url)
             existing_inactive.image_url = local_url or image_url
             db.add(StatusHistoryDB(
@@ -645,11 +671,15 @@ def ingest_listings(db: Session = Depends(get_db)):
                     new_price=float(new_price),
                     recorded_at=now,
                 ))
-            # Remove from lookup so a second match in the same run doesn't double-resurrect
             inactive_by_address.pop(scraped_address, None)
             inactive_by_address.pop(api_address, None)
             existing_keys.add(key)
             resurrected += 1
+            continue
+
+        # Only auto-ingest waterfront properties.
+        if meta.get("waterfront") is not True:
+            waterfront_skipped += 1
             continue
 
         listing = ListingDB(
@@ -664,11 +694,12 @@ def ingest_listings(db: Session = Depends(get_db)):
             category="Inbox",
             property_type=item["property_type"],
             listing_status=meta.get("listing_status"),
+            waterfront=meta.get("waterfront"),
             date_added=now,
             date_updated=now,
         )
         db.add(listing)
-        db.flush()  # populate listing.id before caching photo
+        db.flush()
         local_url = cache_photo(listing.id, image_url)
         if local_url:
             listing.image_url = local_url
@@ -688,12 +719,42 @@ def ingest_listings(db: Session = Depends(get_db)):
         existing_keys.add(key)
         added += 1
 
+    db.add(IngestLogDB(
+        run_at=now,
+        run_by=body.run_by,
+        viewpoint_total=viewpoint_total,
+        price_lot_filtered=price_lot_filtered,
+        already_tracked=already_tracked,
+        waterfront_skipped=waterfront_skipped,
+        resurrected=resurrected,
+        added=added,
+    ))
     db.execute(
         text("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_ingest_date', :v)"),
         {"v": date_cls.today().isoformat()},
     )
     db.commit()
-    return {"added": added, "resurrected": resurrected, "fetched": len(new_listings)}
+    return {
+        "added": added,
+        "resurrected": resurrected,
+        "fetched": price_lot_filtered,
+        "viewpoint_total": viewpoint_total,
+        "price_lot_filtered": price_lot_filtered,
+        "already_tracked": already_tracked,
+        "waterfront_skipped": waterfront_skipped,
+        "run_at": now.isoformat(),
+        "run_by": body.run_by,
+    }
+
+
+@app.get("/api/ingest/history", response_model=List[IngestLogResponse])
+def get_ingest_history(db: Session = Depends(get_db)):
+    return (
+        db.query(IngestLogDB)
+        .order_by(IngestLogDB.run_at.desc())
+        .limit(50)
+        .all()
+    )
 
 
 @app.get("/api/proposals", response_model=List[ListingResponse])

@@ -53,6 +53,9 @@ export default function ListingCard({
         {isRankedCategory && rank != null && (
           <span className="card-rank">#{rank}</span>
         )}
+        {listing.waterfront && (
+          <span className="card-waterfront-badge">~ waterfront</span>
+        )}
         {listing.listing_status && (
           <div className="card-status-bar">{listing.listing_status}</div>
         )}

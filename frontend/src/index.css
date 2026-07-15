@@ -572,6 +572,151 @@ body {
   letter-spacing: .04em;
 }
 
+.card-waterfront-badge {
+  position: absolute;
+  bottom: 28px; /* sits above the status bar when present */
+  left: 9px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(14,116,144,.85);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+
+/* ── Ingest Results Modal ── */
+.ingest-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+
+.ingest-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ingest-meta-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+}
+
+.ingest-meta-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.ingest-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.ingest-funnel-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 7px 12px;
+  font-size: 13px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.ingest-funnel-row:last-child { border-bottom: none; }
+
+.ingest-funnel-row--highlight {
+  background: rgba(14,116,144,.08);
+  font-weight: 600;
+}
+
+.ingest-funnel-label { color: var(--text); }
+
+.ingest-funnel-value {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.ingest-funnel-delta {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+}
+
+.ingest-history-heading {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.ingest-history-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ingest-history-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.ingest-history-table th {
+  padding: 6px 10px;
+  text-align: right;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.ingest-history-table th:first-child,
+.ingest-history-table th:nth-child(2) { text-align: left; }
+
+.ingest-history-table td {
+  padding: 6px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.ingest-history-table td:first-child,
+.ingest-history-table td:nth-child(2) { text-align: left; white-space: nowrap; }
+
+.ingest-history-table tr:last-child td { border-bottom: none; }
+
+.ingest-history-row--current td { background: rgba(14,116,144,.06); }
+
+.ingest-history-added { color: #0e7490; font-weight: 700; }
+.ingest-funnel-na { color: var(--text-muted); font-style: italic; font-size: 12px; }
+
+/* ── Waterfront badge ── */
+.modal-waterfront-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0e7490;
+  letter-spacing: .02em;
+}
+
 .card--dragging {
   opacity: 0.4;
   cursor: grabbing;
