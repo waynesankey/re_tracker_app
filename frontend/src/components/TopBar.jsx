@@ -15,10 +15,10 @@ const CATEGORY_COLORS = {
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
   totalCount, adding, error, refreshing, refreshProgress, ingesting, ingestMsg, theme,
-  currentUser, proposalCount, soldUnseen, showProposals,
+  currentUser, proposalCount, soldUnseen, showProposals, viewMode,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
   onSortChange, onAdd, onRefresh, onIngest, onEmailRealtor, onSearch, onToggleTheme,
-  onUserChange, onShowProposals, onHideProposals,
+  onUserChange, onShowProposals, onHideProposals, onViewModeChange,
 }) {
   const [input, setInput] = useState('')
 
@@ -100,6 +100,19 @@ export default function TopBar({
       </div>
 
       <div className="topbar-right">
+        <div className="view-toggle" title="Switch between grid and map view">
+          <button
+            className={`view-toggle-btn${viewMode === 'grid' ? ' active' : ''}`}
+            onClick={() => onViewModeChange('grid')}
+            aria-label="Grid view"
+          >⊞</button>
+          <button
+            className={`view-toggle-btn${viewMode === 'map' ? ' active' : ''}`}
+            onClick={() => onViewModeChange('map')}
+            aria-label="Map view"
+          >⊙</button>
+        </div>
+
         <button className="theme-toggle" onClick={onToggleTheme} title="Toggle light/dark mode">
           {theme === 'dark' ? 'Light' : 'Dark'}
         </button>

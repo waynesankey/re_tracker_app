@@ -49,6 +49,7 @@ with engine.connect() as _conn:
         "property_type TEXT", "listing_id TEXT", "class_id TEXT",
         "proposed_category TEXT", "proposed_by TEXT", "proposed_at DATETIME",
         "rank INTEGER", "listing_status TEXT", "waterfront BOOLEAN",
+        "lat REAL", "lng REAL",
     ):
         try:
             _conn.execute(text(f"ALTER TABLE listings ADD COLUMN {col}"))
@@ -307,6 +308,15 @@ def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
                 detail={"id": existing.id, "message": f"Already tracking: {existing.address} ({existing.property_type} · {existing.category})"},
             )
 
+    # Geocode the address so the map view can plot this listing.
+    # Best source: lat/lng from Viewpoint API (in meta for MLS lookups).
+    # Fallback: Nominatim on the scraped address.
+    lat = meta.get("lat")
+    lng = meta.get("lng")
+    if (lat is None or lng is None) and scraped_address:
+        from geocode import geocode as _geocode
+        lat, lng = _geocode(scraped_address)
+
     now = datetime.utcnow()
     listing = ListingDB(
         url=url,
@@ -319,6 +329,8 @@ def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
         property_type=meta.get("property_type"),
         listing_status=meta.get("listing_status"),
         waterfront=meta.get("waterfront"),
+        lat=lat,
+        lng=lng,
         listing_id=resolved_listing_id,
         class_id=resolved_class_id,
         date_added=now,
@@ -459,6 +471,12 @@ def refresh_prices(db: Session = Depends(get_db)):
 
             if meta is None:
                 # Scraper threw an exception (timeout / network error) — transient, don't auto-withdraw
+                results.append({**base, "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price})
+                continue
+
+            if meta.get("viewpoint_map_redirect"):
+                # Viewpoint redirected the cutsheet to their map — URL changed but listing may still be active.
+                # Treat as skipped (could not fetch) rather than withdrawn.
                 results.append({**base, "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price})
                 continue
 
@@ -652,6 +670,9 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
             existing_inactive.listing_status = meta.get("listing_status")
             if meta.get("waterfront") is not None:
                 existing_inactive.waterfront = meta.get("waterfront")
+            if item.get("lat") is not None:
+                existing_inactive.lat = item["lat"]
+                existing_inactive.lng = item["lng"]
             existing_inactive.date_updated = now
             if title:
                 existing_inactive.title = title
@@ -695,6 +716,8 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
             property_type=item["property_type"],
             listing_status=meta.get("listing_status"),
             waterfront=meta.get("waterfront"),
+            lat=item.get("lat"),
+            lng=item.get("lng"),
             date_added=now,
             date_updated=now,
         )

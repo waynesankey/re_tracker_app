@@ -178,6 +178,12 @@ def scrape_listing(url: str) -> Dict:
     except Exception:
         return result
 
+    # Viewpoint sometimes redirects an active cutsheet to their map page — this means
+    # the URL changed, not that the listing was removed.  Signal callers to skip (not withdraw).
+    if "viewpoint.ca" in source_domain and "/map" in resp.url:
+        result["viewpoint_map_redirect"] = True
+        return result
+
     try:
         soup = BeautifulSoup(resp.text, "lxml")
     except Exception:

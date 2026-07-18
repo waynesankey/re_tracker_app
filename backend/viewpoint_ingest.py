@@ -131,6 +131,8 @@ def fetch_new_hrm_listings() -> dict:
             url = raw_url if raw_url.startswith("http") else VP_BASE + raw_url
             image_url = f"{VP_BASE}/property/cutimageh/{lid}/{cid}/1.jpg?sd=summary"
 
+            lat = item.get("latitude")
+            lng = item.get("longitude")
             results.append({
                 "listing_id": lid,
                 "class_id": cid,
@@ -141,6 +143,8 @@ def fetch_new_hrm_listings() -> dict:
                 "price": float(item["list_price"]) if item.get("list_price") else None,
                 "list_dt": (item.get("list_dt") or "")[:10],
                 "property_type": our_type,
+                "lat": float(lat) if lat else None,
+                "lng": float(lng) if lng else None,
             })
 
     return {

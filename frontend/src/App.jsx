@@ -7,6 +7,7 @@ import RefreshResultsModal from './components/RefreshResultsModal'
 import IngestResultsModal from './components/IngestResultsModal'
 import SearchModal from './components/SearchModal'
 import ProposalsView from './components/ProposalsView'
+import ListingMap from './components/ListingMap'
 
 export const RANKED_CATEGORIES = ['Interested', 'Showing Requested', 'Visited']
 
@@ -40,6 +41,7 @@ export default function App() {
   const [category, setCategory] = useState('')
   const [priceChangedFilter, setPriceChangedFilter] = useState(false)
   const [sort, setSort] = useState('date_added')
+  const [viewMode, setViewMode] = useState('grid')
   const [selected, setSelected] = useState(null)
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState(null)
@@ -322,7 +324,7 @@ export default function App() {
   const isRanked = isRankedCategory && sort === 'rank'
 
   return (
-    <div className="app">
+    <div className={`app${viewMode === 'map' ? ' app--map' : ''}`}>
       <TopBar
         propertyType={propertyType}
         categories={visibleCategories}
@@ -341,6 +343,7 @@ export default function App() {
         proposalCount={proposals.length}
         soldUnseen={soldUnseen}
         showProposals={showProposals}
+        viewMode={viewMode}
         onPropertyTypeChange={handlePropertyTypeChange}
         onCategoryChange={handleCategoryChange}
         onPriceChangedFilter={handlePriceChangedFilter}
@@ -354,6 +357,7 @@ export default function App() {
         onUserChange={handleUserChange}
         onShowProposals={() => { setShowProposals(true); setSelected(null); loadProposals() }}
         onHideProposals={() => setShowProposals(false)}
+        onViewModeChange={setViewMode}
       />
       {showProposals
         ? <ProposalsView
@@ -364,14 +368,16 @@ export default function App() {
             onWithdraw={handleWithdraw}
             onReject={handleReject}
           />
-        : <ListingGrid
-            listings={listings}
-            loading={loading}
-            onSelect={setSelected}
-            isRankedCategory={isRankedCategory}
-            isRanked={isRanked}
-            onReorder={handleReorder}
-          />
+        : viewMode === 'map'
+          ? <ListingMap listings={listings} onSelect={handleSelectById} />
+          : <ListingGrid
+              listings={listings}
+              loading={loading}
+              onSelect={setSelected}
+              isRankedCategory={isRankedCategory}
+              isRanked={isRanked}
+              onReorder={handleReorder}
+            />
       }
       {selected && (
         <ListingDetail

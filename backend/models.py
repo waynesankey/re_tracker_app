@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import Boolean, Column, Integer, String, Numeric, DateTime, ForeignKey
+from sqlalchemy import Boolean, Column, Float, Integer, String, Numeric, DateTime, ForeignKey
 from pydantic import BaseModel
 from database import Base
 
@@ -25,6 +25,8 @@ class ListingDB(Base):
     rank = Column(Integer, nullable=True)
     listing_status = Column(String, nullable=True)
     waterfront = Column(Boolean, nullable=True)
+    lat = Column(Float, nullable=True)
+    lng = Column(Float, nullable=True)
     notes = Column(String)
     date_added = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow)
@@ -135,6 +137,8 @@ class ListingResponse(BaseModel):
     rank: Optional[int] = None
     listing_status: Optional[str] = None
     waterfront: Optional[bool] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     notes: Optional[str] = None
     date_added: datetime
     date_updated: datetime
