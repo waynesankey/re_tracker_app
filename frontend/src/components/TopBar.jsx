@@ -58,7 +58,7 @@ export default function TopBar({
           {/* Type tabs — one always active, independent of category selection */}
           <button
             className={`tab${!propertyType && !showProposals && !priceChangedFilter ? ' active' : ''}`}
-            onClick={() => { onHideProposals(); onPropertyTypeChange(''); onCategoryChange('') }}
+            onClick={() => { onHideProposals(); onPropertyTypeChange('') }}
           >
             All
           </button>

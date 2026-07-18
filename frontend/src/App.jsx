@@ -291,8 +291,7 @@ export default function App() {
       const valid = CATEGORIES_BY_TYPE[type] || ALL_CATEGORIES
       if (!valid.includes(category)) setCategory('')
     }
-    // clicking a type tab (All/Houses/Land) always deselects category, so leave rank sort alone
-    // only clear rank if no category will remain in a ranked context
+    // only clear rank sort if the category won't be a ranked context after the switch
     if (!type || !RANKED_CATEGORIES.includes(category)) {
       setSort((prev) => (prev === 'rank' ? 'date_added' : prev))
     }
