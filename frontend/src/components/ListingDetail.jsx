@@ -402,7 +402,7 @@ export default function ListingDetail({
           <div className="modal-meta">
             <span>Added {dateAdded}</span>
             {listing.source_domain && <span>{listing.source_domain}</span>}
-            {listing.waterfront && <span className="modal-waterfront-badge">~ waterfront</span>}
+            {listing.waterfront && <span className="modal-waterfront-badge">waterfront</span>}
           </div>
 
           <div className="modal-actions">

@@ -85,7 +85,7 @@ export default function ListingMap({ listings, onSelect }) {
             <div class="map-popup-address">${label}</div>
             <div class="map-popup-price">${fmtPrice}</div>
             <div class="map-popup-cat">${l.category}</div>
-            ${l.waterfront ? '<div class="map-popup-wf">~ waterfront</div>' : ''}
+            ${l.waterfront ? '<div class="map-popup-wf">waterfront</div>' : ''}
             <button class="map-popup-btn" data-id="${l.id}">Open listing</button>
           </div>`,
           { minWidth: 180 }
