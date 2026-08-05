@@ -94,10 +94,16 @@ with engine.connect() as _conn:
             already_tracked INTEGER,
             waterfront_skipped INTEGER,
             resurrected INTEGER,
+            relisted INTEGER,
             added INTEGER
         )
     """))
     _conn.commit()
+    try:
+        _conn.execute(text("ALTER TABLE ingest_log ADD COLUMN relisted INTEGER"))
+        _conn.commit()
+    except Exception:
+        pass
 
     # Enforce rank uniqueness within each {property_type, category} group.
     _conn.execute(text("""
@@ -338,6 +344,9 @@ def create_listing(body: ListingCreate, db: Session = Depends(get_db)):
     )
     db.add(listing)
     db.flush()  # get listing.id before adding history
+    local_url = cache_photo(listing.id, listing.image_url)
+    if local_url:
+        listing.image_url = local_url
     db.add(StatusHistoryDB(
         listing_id=listing.id,
         from_category=None,
@@ -573,6 +582,11 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
         setattr(listing, field, value)
     listing.date_updated = datetime.utcnow()
 
+    if "image_url" in updates and updates["image_url"] and not (updates["image_url"] or "").startswith("/photos/"):
+        local_url = cache_photo(listing_id, updates["image_url"])
+        if local_url:
+            listing.image_url = local_url
+
     new_category = updates.get("category")
     if new_category and new_category != old_category:
         if new_category in RANKED_CATEGORIES:
@@ -631,8 +645,36 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
         if l.address
     }
 
+    active_listings = db.query(ListingDB).filter(
+        ListingDB.category.notin_(["Sold", "Listing Withdrawn"]),
+        ListingDB.address.isnot(None),
+    ).all()
+
+    def _addr_parts(addr):
+        """Split 'Street, City' → (street, city). City may be None."""
+        parts = addr.lower().strip().rsplit(',', 1)
+        if len(parts) == 2:
+            return parts[0].strip(), parts[1].strip()
+        return parts[0].strip(), None
+
+    def _find_active(addr):
+        """Return an active ListingDB whose address matches addr, or None."""
+        if not addr:
+            return None
+        street, city = _addr_parts(addr)
+        for l in active_listings:
+            lstreet, lcity = _addr_parts(l.address)
+            if street != lstreet:
+                continue
+            # If both sides have a city they must agree; otherwise street alone is enough
+            if city and lcity and city != lcity:
+                continue
+            return l
+        return None
+
     added = 0
     resurrected = 0
+    relisted = 0
     already_tracked = 0
     waterfront_skipped = 0
     now = datetime.utcnow()
@@ -652,6 +694,36 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
 
         scraped_address = (meta.get("address") or "").lower().strip()
         api_address = (item.get("address") or "").lower().strip()
+
+        active_match = _find_active(scraped_address) or _find_active(api_address)
+        if active_match:
+            old_price = float(active_match.price) if active_match.price is not None else None
+            new_price = item.get("price")
+            active_match.listing_id = item["listing_id"]
+            active_match.class_id = item["class_id"]
+            active_match.url = item["url"]
+            active_match.listing_status = meta.get("listing_status")
+            if title:
+                active_match.title = title
+            if item.get("lat") is not None:
+                active_match.lat = item["lat"]
+                active_match.lng = item["lng"]
+            if new_price is not None and float(new_price) != old_price:
+                active_match.price = new_price
+                db.add(PriceHistoryDB(
+                    listing_id=active_match.id,
+                    old_price=old_price,
+                    new_price=float(new_price),
+                    recorded_at=now,
+                ))
+            local_url = cache_photo(active_match.id, image_url)
+            if local_url:
+                active_match.image_url = local_url
+            active_match.date_updated = now
+            existing_keys.add(key)
+            relisted += 1
+            continue
+
         existing_inactive = (
             inactive_by_address.get(scraped_address) or
             inactive_by_address.get(api_address)
@@ -750,6 +822,7 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
         already_tracked=already_tracked,
         waterfront_skipped=waterfront_skipped,
         resurrected=resurrected,
+        relisted=relisted,
         added=added,
     ))
     db.execute(
@@ -760,6 +833,7 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
     return {
         "added": added,
         "resurrected": resurrected,
+        "relisted": relisted,
         "fetched": price_lot_filtered,
         "viewpoint_total": viewpoint_total,
         "price_lot_filtered": price_lot_filtered,

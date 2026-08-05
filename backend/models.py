@@ -157,6 +157,7 @@ class IngestLogDB(Base):
     already_tracked = Column(Integer, nullable=True)   # skipped — in DB
     waterfront_skipped = Column(Integer, nullable=True) # skipped — not waterfront
     resurrected = Column(Integer, nullable=True)
+    relisted = Column(Integer, nullable=True)
     added = Column(Integer, nullable=True)
 
 
@@ -169,6 +170,7 @@ class IngestLogResponse(BaseModel):
     already_tracked: Optional[int] = None
     waterfront_skipped: Optional[int] = None
     resurrected: Optional[int] = None
+    relisted: Optional[int] = None
     added: Optional[int] = None
 
     model_config = {"from_attributes": True}

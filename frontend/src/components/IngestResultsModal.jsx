@@ -85,9 +85,10 @@ export default function IngestResultsModal({ result, onClose }) {
             <FunnelRow label="Viewpoint (this week, HRM)" value={result.viewpoint_total} />
             <FunnelRow label="Failed price / lot filter" value={priceFiltered} delta={priceFiltered != null ? -priceFiltered : null} />
             <FunnelRow label="Passed price filter" value={result.price_lot_filtered} />
-            <FunnelRow label="Already tracking" value={result.already_tracked} delta={result.already_tracked ? -result.already_tracked : null} />
+            <FunnelRow label="Already tracking (same MLS)" value={result.already_tracked} delta={result.already_tracked ? -result.already_tracked : null} />
             <FunnelRow label="Failed waterfront filter" value={result.waterfront_skipped} delta={result.waterfront_skipped ? -result.waterfront_skipped : null} />
-            <FunnelRow label="Re-listed (from Sold/Withdrawn)" value={result.resurrected} delta={result.resurrected || null} />
+            <FunnelRow label="Re-listed (new MLS, active)" value={result.relisted} delta={result.relisted || null} highlight />
+            <FunnelRow label="Re-listed (from Sold/Withdrawn)" value={result.resurrected} delta={result.resurrected || null} highlight />
             <FunnelRow label="Added to Inbox" value={result.added} delta={result.added || null} highlight />
           </div>
 

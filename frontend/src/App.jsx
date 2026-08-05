@@ -186,7 +186,7 @@ export default function App() {
     try {
       const result = await api.ingest(currentUser)
       await load()
-      setIngestMsg({ added: result.added, fetched: result.fetched, resurrected: result.resurrected })
+      setIngestMsg({ added: result.added, fetched: result.fetched, resurrected: result.resurrected, relisted: result.relisted })
       setIngestResult(result)
     } catch (e) {
       setIngestMsg({ error: e.message })

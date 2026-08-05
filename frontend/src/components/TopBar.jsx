@@ -81,7 +81,7 @@ export default function TopBar({
           {categories.map((c) => (
             <button
               key={c}
-              className={`tab tab--cat${category === c && !priceChangedFilter ? ' active' : ''}`}
+              className={`tab tab--cat${category === c && !priceChangedFilter && !showProposals ? ' active' : ''}`}
               style={{ '--cat-color': CATEGORY_COLORS[c] ?? '#6b7280' }}
               onClick={() => onCategoryChange(category === c ? '' : c)}
             >
@@ -150,7 +150,8 @@ export default function TopBar({
               : [
                   `${ingestMsg.added} new`,
                   ingestMsg.resurrected > 0 ? `${ingestMsg.resurrected} re-listed` : null,
-                  `${ingestMsg.fetched - ingestMsg.added - (ingestMsg.resurrected || 0)} existing`,
+                  ingestMsg.relisted > 0 ? `${ingestMsg.relisted} relisted (active)` : null,
+                  `${ingestMsg.fetched - ingestMsg.added - (ingestMsg.resurrected || 0) - (ingestMsg.relisted || 0)} existing`,
                 ].filter(Boolean).join(' · ')}
           </span>
         )}
