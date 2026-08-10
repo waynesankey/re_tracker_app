@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { api } from '../api'
+import Window from './Window'
 
 function fmt(dt) {
   if (!dt) return '—'
@@ -47,10 +48,7 @@ export default function IngestResultsModal({ result, onClose }) {
   const prev = history.length > 1 ? history[1] : null
 
   return (
-    <div className="overlay">
-      <div className="modal modal--narrow" role="dialog" aria-modal="true">
-        <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
-
+    <Window title="Fetch New — Results" onClose={onClose} width={500} initialX={60} initialY={70}>
         <div className="modal-body">
           <h2 className="results-heading">Fetch New — Results</h2>
 
@@ -127,7 +125,6 @@ export default function IngestResultsModal({ result, onClose }) {
             </>
           )}
         </div>
-      </div>
-    </div>
+    </Window>
   )
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import Window from './Window'
 
 const BADGE_COLORS = {
   'Inbox': '#0e7490',
@@ -147,12 +148,10 @@ export default function ListingDetail({
 
   const showSaved = Boolean(savedAt)
 
-  return (
-    <div className="overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal" role="dialog" aria-modal="true">
-        <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+  const winTitle = listing.address || listing.title || 'Listing'
 
-        {/* Saved banner — lives outside modal-body so it spans the full width */}
+  return (
+    <Window title={winTitle} onClose={onClose} width={620} initialX={Math.max(20, window.innerWidth / 2 - 310)} initialY={70}>
         {notice && (
           <div className="saved-banner" role="status">
             {notice}
@@ -169,7 +168,7 @@ export default function ListingDetail({
           </div>
         )}
 
-        <div className="modal-photo">
+        <div className="modal-photo modal-photo--win">
           {form.image_url ? (
             <img src={form.image_url} alt="" />
           ) : (
@@ -437,8 +436,7 @@ export default function ListingDetail({
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </Window>
   )
 }
 

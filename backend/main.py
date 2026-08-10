@@ -484,9 +484,29 @@ def refresh_prices(db: Session = Depends(get_db)):
                 continue
 
             if meta.get("viewpoint_map_redirect"):
-                # Viewpoint redirected the cutsheet to their map — URL changed but listing may still be active.
-                # Treat as skipped (could not fetch) rather than withdrawn.
-                results.append({**base, "status": "skipped", "old_price": None, "new_price": None, "current_price": old_price})
+                # Viewpoint redirected the cutsheet to their map page.
+                # If the listing was Pending its closing completed → mark Sold.
+                # Otherwise we can't distinguish sold from expired — skip.
+                if listing.listing_status == "Pending":
+                    old_category = listing.category
+                    old_rank = listing.rank
+                    listing.category = "Sold"
+                    listing.rank = None
+                    listing.date_updated = now
+                    db.add(StatusHistoryDB(
+                        listing_id=listing.id,
+                        from_category=old_category,
+                        to_category="Sold",
+                        changed_at=now,
+                    ))
+                    db.flush()
+                    if old_category in RANKED_CATEGORIES and old_rank is not None:
+                        _compact_ranks(db, listing.property_type, old_category, old_rank)
+                    results.append({**base, "category": old_category, "status": "sold",
+                                    "old_price": None, "new_price": None, "current_price": old_price})
+                else:
+                    # Can't distinguish sold vs expired — surface to user for manual call
+                    results.append({**base, "status": "unclear", "old_price": None, "new_price": None, "current_price": old_price})
                 continue
 
             if "listing_status" in meta:
@@ -494,6 +514,26 @@ def refresh_prices(db: Session = Depends(get_db)):
                 if new_status != listing.listing_status:
                     listing.listing_status = new_status
                     listing.date_updated = now
+                # If Viewpoint's status_id for Sold is ever added to VP_STATUS_MAP,
+                # auto-move the listing here rather than waiting for the redirect.
+                if new_status == "Sold" and listing.category != "Sold":
+                    old_category = listing.category
+                    old_rank = listing.rank
+                    listing.category = "Sold"
+                    listing.rank = None
+                    listing.date_updated = now
+                    db.add(StatusHistoryDB(
+                        listing_id=listing.id,
+                        from_category=old_category,
+                        to_category="Sold",
+                        changed_at=now,
+                    ))
+                    db.flush()
+                    if old_category in RANKED_CATEGORIES and old_rank is not None:
+                        _compact_ranks(db, listing.property_type, old_category, old_rank)
+                    results.append({**base, "category": old_category, "status": "sold",
+                                    "old_price": None, "new_price": None, "current_price": old_price})
+                    continue
 
             new_price = meta.get("price")
             if new_price is None:

@@ -1,3 +1,5 @@
+import Window from './Window'
+
 function fmt(price) {
   return price != null
     ? '$' + Number(price).toLocaleString('en-CA', { maximumFractionDigits: 0 })
@@ -10,7 +12,7 @@ function pctDelta(oldP, newP) {
   return (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%'
 }
 
-const STATUS_ORDER = { changed: 0, withdrawn: 1, unchanged: 2, skipped: 3, restored: 4 }
+const STATUS_ORDER = { changed: 0, withdrawn: 1, unclear: 2, unchanged: 3, skipped: 4, restored: 5, sold: 6 }
 
 function LocationPill({ propertyType, category }) {
   if (!propertyType && !category) return null
@@ -22,20 +24,20 @@ function LocationPill({ propertyType, category }) {
   )
 }
 
-export default function RefreshResultsModal({ results, runDate, onSelectListing, onRestore, onClose }) {
+export default function RefreshResultsModal({ results, runDate, onSelectListing, onRestore, onCategorize, onClose }) {
   const sorted = [...(results || [])].sort(
     (a, b) => (STATUS_ORDER[a.status] ?? 9) - (STATUS_ORDER[b.status] ?? 9)
   )
 
   const nChanged   = results ? results.filter((r) => r.status === 'changed').length   : 0
   const nWithdrawn = results ? results.filter((r) => r.status === 'withdrawn').length  : 0
+  const nUnclear   = results ? results.filter((r) => r.status === 'unclear').length    : 0
   const nSkipped   = results ? results.filter((r) => r.status === 'skipped').length    : 0
+  const nSold      = results ? results.filter((r) => r.status === 'sold').length       : 0
   const total = results ? results.length : 0
 
   return (
-    <div className="overlay">
-      <div className="modal modal--narrow" role="dialog" aria-modal="true">
-        <button className="modal-close" onClick={onClose} aria-label="Close">✕</button>
+    <Window title="Price Refresh" onClose={onClose} width={500} initialX={60} initialY={70}>
         <div className="modal-body">
           <h2 className="results-heading">
             Price refresh
@@ -52,6 +54,8 @@ export default function RefreshResultsModal({ results, runDate, onSelectListing,
               {nChanged   > 0 && <> · <strong>{nChanged} price {nChanged === 1 ? 'change' : 'changes'}</strong></>}
               {nChanged  === 0 && <> · 0 changed</>}
               {nWithdrawn > 0 && <> · <strong>{nWithdrawn} withdrawn</strong></>}
+              {nSold      > 0 && <> · <strong>{nSold} sold</strong></>}
+              {nUnclear   > 0 && <> · <strong>{nUnclear} unclear</strong></>}
               {nSkipped   > 0 && <> · {nSkipped} could not fetch</>}
             </p>
           )}
@@ -119,6 +123,42 @@ export default function RefreshResultsModal({ results, runDate, onSelectListing,
                   )
                 }
 
+                if (r.status === 'sold') {
+                  return (
+                    <li key={r.id} className="results-row results-row--withdrawn">
+                      <span className="results-name results-name--muted">
+                        {r.address || r.title || '—'}
+                        <LocationPill propertyType={r.property_type} category={r.category} />
+                      </span>
+                      <span className="results-prices">
+                        <span className="results-badge results-badge--sold">→ Sold</span>
+                      </span>
+                    </li>
+                  )
+                }
+
+                if (r.status === 'unclear') {
+                  return (
+                    <li key={r.id} className="results-row results-row--unclear" onClick={() => onSelectListing(r.id)}>
+                      <span className="results-name">
+                        {r.address || r.title || '—'}
+                        <LocationPill propertyType={r.property_type} category={r.category} />
+                      </span>
+                      <span className="results-prices">
+                        <span className="results-badge results-badge--skip">No longer on Viewpoint</span>
+                        <button
+                          className="results-undo"
+                          onClick={(e) => { e.stopPropagation(); onCategorize(r.id, 'Sold') }}
+                        >Sold</button>
+                        <button
+                          className="results-undo"
+                          onClick={(e) => { e.stopPropagation(); onCategorize(r.id, 'Listing Withdrawn') }}
+                        >Withdrawn</button>
+                      </span>
+                    </li>
+                  )
+                }
+
                 if (r.status === 'restored') {
                   return (
                     <li key={r.id} className="results-row results-row--unchanged">
@@ -147,7 +187,6 @@ export default function RefreshResultsModal({ results, runDate, onSelectListing,
             </ul>
           )}
         </div>
-      </div>
-    </div>
+    </Window>
   )
 }

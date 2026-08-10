@@ -247,7 +247,6 @@ export default function App() {
 
   // Open a listing by ID — used by the results modal rows
   const handleSelectById = async (id) => {
-    setRefreshResults(null)
     const listing = listings.find((l) => l.id === id) || await api.getListing(id)
     setSelected(listing)
   }
@@ -279,6 +278,17 @@ export default function App() {
     await load()
     setRefreshResults((prev) => prev
       ? { ...prev, results: prev.results.map((r) => r.id === id ? { ...r, status: 'restored' } : r) }
+      : prev
+    )
+  }
+
+  // Categorize an "unclear" listing (sold vs withdrawn) from the refresh results modal
+  const handleCategorize = async (id, category) => {
+    await api.updateListing(id, { category })
+    await load()
+    const newStatus = category === 'Sold' ? 'sold' : 'withdrawn'
+    setRefreshResults((prev) => prev
+      ? { ...prev, results: prev.results.map((r) => r.id === id ? { ...r, status: newStatus } : r) }
       : prev
     )
   }
@@ -406,6 +416,7 @@ export default function App() {
           runDate={refreshResults.runDate}
           onSelectListing={handleSelectById}
           onRestore={handleRestore}
+          onCategorize={handleCategorize}
           onClose={() => setRefreshResults(null)}
         />
       )}
