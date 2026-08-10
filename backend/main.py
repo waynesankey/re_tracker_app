@@ -207,27 +207,34 @@ def _next_rank(db: Session, property_type: str, category: str, exclude_id: int) 
     return (max_rank or 0) + 1
 
 
-def _compact_ranks(db: Session, property_type: str, category: str, removed_rank: int):
-    """After a listing leaves a ranked group, close the gap: shift all listings
-    ranked below it (higher number) down by 1.  Uses a two-phase null→assign
-    approach to avoid unique-constraint violations during the shift."""
-    affected = (
+def _renumber_ranks(db: Session, property_type: str, category: str):
+    """Renumber all ranked listings in a (property_type, category) group 1, 2, 3, ...
+    preserving their relative order. Handles gaps from removals, multi-listing
+    refresh runs, and any other state that leaves non-sequential ranks."""
+    ranked = (
         db.query(ListingDB)
         .filter(
             ListingDB.property_type == property_type,
             ListingDB.category == category,
-            ListingDB.rank > removed_rank,
+            ListingDB.rank.isnot(None),
         )
+        .order_by(ListingDB.rank.asc(), ListingDB.id.asc())
         .all()
     )
-    if not affected:
+    if not ranked:
         return
-    new_ranks = {l.id: l.rank - 1 for l in affected}
-    for l in affected:
+    # Phase 1: null out to avoid unique-constraint collisions during reassignment
+    for l in ranked:
         l.rank = None
     db.flush()
-    for l in affected:
-        l.rank = new_ranks[l.id]
+    # Phase 2: assign clean sequential ranks
+    for i, l in enumerate(ranked, 1):
+        l.rank = i
+
+
+# Keep old name as an alias so any missed call sites still work
+def _compact_ranks(db, property_type, category, removed_rank):
+    _renumber_ranks(db, property_type, category)
 
 
 @app.get("/api/listings", response_model=List[ListingResponse])
@@ -614,7 +621,6 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
 
     updates = body.model_dump(exclude_unset=True)
     old_category = listing.category
-    old_rank = listing.rank
     old_property_type = listing.property_type
     old_price = float(listing.price) if listing.price is not None else None
 
@@ -628,14 +634,22 @@ def update_listing(listing_id: int, body: ListingUpdate, db: Session = Depends(g
             listing.image_url = local_url
 
     new_category = updates.get("category")
+    new_property_type = updates.get("property_type", old_property_type)
     if new_category and new_category != old_category:
         if new_category in RANKED_CATEGORIES:
             listing.rank = _next_rank(db, listing.property_type, new_category, listing_id)
         else:
             listing.rank = None
         db.flush()
-        if old_category in RANKED_CATEGORIES and old_rank is not None:
-            _compact_ranks(db, old_property_type, old_category, old_rank)
+        if old_category in RANKED_CATEGORIES:
+            _renumber_ranks(db, old_property_type, old_category)
+    elif new_property_type != old_property_type and old_category in RANKED_CATEGORIES:
+        # Property type changed while in a ranked category — reassign rank in new group,
+        # then renumber both the old group (gap left behind) and new group (listing appended).
+        listing.rank = None
+        db.flush()
+        _renumber_ranks(db, old_property_type, old_category)
+        listing.rank = _next_rank(db, new_property_type, old_category, listing_id)
         db.add(StatusHistoryDB(
             listing_id=listing_id,
             from_category=old_category,
