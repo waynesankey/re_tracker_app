@@ -232,11 +232,6 @@ def _renumber_ranks(db: Session, property_type: str, category: str):
         l.rank = i
 
 
-# Keep old name as an alias so any missed call sites still work
-def _compact_ranks(db, property_type, category, removed_rank):
-    _renumber_ranks(db, property_type, category)
-
-
 @app.get("/api/listings", response_model=List[ListingResponse])
 def get_listings(
     category: Optional[str] = None,
@@ -496,7 +491,6 @@ def refresh_prices(db: Session = Depends(get_db)):
                 # Otherwise we can't distinguish sold from expired — skip.
                 if listing.listing_status == "Pending":
                     old_category = listing.category
-                    old_rank = listing.rank
                     listing.category = "Sold"
                     listing.rank = None
                     listing.date_updated = now
@@ -507,8 +501,8 @@ def refresh_prices(db: Session = Depends(get_db)):
                         changed_at=now,
                     ))
                     db.flush()
-                    if old_category in RANKED_CATEGORIES and old_rank is not None:
-                        _compact_ranks(db, listing.property_type, old_category, old_rank)
+                    if old_category in RANKED_CATEGORIES:
+                        _renumber_ranks(db, listing.property_type, old_category)
                     results.append({**base, "category": old_category, "status": "sold",
                                     "old_price": None, "new_price": None, "current_price": old_price})
                 else:
@@ -525,7 +519,6 @@ def refresh_prices(db: Session = Depends(get_db)):
                 # auto-move the listing here rather than waiting for the redirect.
                 if new_status == "Sold" and listing.category != "Sold":
                     old_category = listing.category
-                    old_rank = listing.rank
                     listing.category = "Sold"
                     listing.rank = None
                     listing.date_updated = now
@@ -536,8 +529,8 @@ def refresh_prices(db: Session = Depends(get_db)):
                         changed_at=now,
                     ))
                     db.flush()
-                    if old_category in RANKED_CATEGORIES and old_rank is not None:
-                        _compact_ranks(db, listing.property_type, old_category, old_rank)
+                    if old_category in RANKED_CATEGORIES:
+                        _renumber_ranks(db, listing.property_type, old_category)
                     results.append({**base, "category": old_category, "status": "sold",
                                     "old_price": None, "new_price": None, "current_price": old_price})
                     continue
@@ -547,7 +540,6 @@ def refresh_prices(db: Session = Depends(get_db)):
                 # Listing page loaded but returned no price → listing no longer available on Viewpoint.
                 # Sold and Listing Withdrawn are already excluded from to_check, so auto-withdraw all others.
                 old_category = listing.category
-                old_rank = listing.rank
                 listing.category = "Listing Withdrawn"
                 listing.rank = None
                 listing.date_updated = now
@@ -558,8 +550,8 @@ def refresh_prices(db: Session = Depends(get_db)):
                     changed_at=now,
                 ))
                 db.flush()
-                if old_category in RANKED_CATEGORIES and old_rank is not None:
-                    _compact_ranks(db, listing.property_type, old_category, old_rank)
+                if old_category in RANKED_CATEGORIES:
+                    _renumber_ranks(db, listing.property_type, old_category)
                 results.append({**base, "category": old_category, "status": "withdrawn",
                                 "old_price": None, "new_price": None, "current_price": old_price})
                 continue
@@ -930,7 +922,6 @@ def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(
     # Sold and Listing Withdrawn are direct, immediate changes — no second vote needed
     if body.new_category in DIRECT_MOVE_CATEGORIES:
         old_category = listing.category
-        old_rank = listing.rank
         old_property_type = listing.property_type
         listing.category = body.new_category
         listing.rank = None
@@ -943,8 +934,8 @@ def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(
             changed_by=body.proposed_by,
         ))
         db.flush()
-        if old_category in RANKED_CATEGORIES and old_rank is not None:
-            _compact_ranks(db, old_property_type, old_category, old_rank)
+        if old_category in RANKED_CATEGORIES:
+            _renumber_ranks(db, old_property_type, old_category)
         db.commit()
         db.refresh(listing)
         return listing
@@ -1016,7 +1007,6 @@ def agree_change(listing_id: int, body: AgreeRequest, db: Session = Depends(get_
         raise HTTPException(status_code=403, detail="Cannot agree to your own proposal")
     now = datetime.utcnow()
     old_category = listing.category
-    old_rank = listing.rank
     old_property_type = listing.property_type
     new_category = listing.proposed_category
     db.add(StatusHistoryDB(
@@ -1043,8 +1033,8 @@ def agree_change(listing_id: int, body: AgreeRequest, db: Session = Depends(get_
     listing.rank = _next_rank(db, listing.property_type, new_category, listing_id) if new_category in RANKED_CATEGORIES else None
     listing.date_updated = now
     db.flush()
-    if old_category in RANKED_CATEGORIES and old_rank is not None:
-        _compact_ranks(db, old_property_type, old_category, old_rank)
+    if old_category in RANKED_CATEGORIES:
+        _renumber_ranks(db, old_property_type, old_category)
     db.commit()
     db.refresh(listing)
     return listing
@@ -1125,12 +1115,11 @@ def delete_listing(listing_id: int, db: Session = Depends(get_db)):
     if not listing:
         raise HTTPException(status_code=404, detail="Not found")
     old_category = listing.category
-    old_rank = listing.rank
     old_property_type = listing.property_type
     db.delete(listing)
     db.flush()
-    if old_category in RANKED_CATEGORIES and old_rank is not None:
-        _compact_ranks(db, old_property_type, old_category, old_rank)
+    if old_category in RANKED_CATEGORIES:
+        _renumber_ranks(db, old_property_type, old_category)
     db.commit()
     return {"ok": True}
 
