@@ -941,9 +941,13 @@ def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(
         return listing
 
     # All other categories go through the two-vote proposal flow
+    old_category = listing.category
+    old_property_type = listing.property_type
     listing.proposed_category = body.new_category
     listing.proposed_by = body.proposed_by
     listing.proposed_at = now
+    if old_category in RANKED_CATEGORIES:
+        listing.rank = None
     db.add(ProposalLogDB(
         listing_id=listing_id,
         from_category=listing.category,
@@ -954,6 +958,9 @@ def propose_change(listing_id: int, body: ProposeRequest, db: Session = Depends(
         action_by=body.proposed_by,
         action_at=now,
     ))
+    db.flush()
+    if old_category in RANKED_CATEGORIES:
+        _renumber_ranks(db, old_property_type, old_category)
     db.commit()
     db.refresh(listing)
     return listing
@@ -1063,6 +1070,8 @@ def withdraw_proposal(listing_id: int, body: WithdrawRequest, db: Session = Depe
     listing.proposed_category = None
     listing.proposed_by = None
     listing.proposed_at = None
+    if listing.category in RANKED_CATEGORIES and listing.rank is None:
+        listing.rank = _next_rank(db, listing.property_type, listing.category, listing_id)
     db.commit()
     db.refresh(listing)
     return listing
@@ -1092,6 +1101,8 @@ def reject_proposal(listing_id: int, body: RejectRequest, db: Session = Depends(
     listing.proposed_category = None
     listing.proposed_by = None
     listing.proposed_at = None
+    if listing.category in RANKED_CATEGORIES and listing.rank is None:
+        listing.rank = _next_rank(db, listing.property_type, listing.category, listing_id)
     db.commit()
     db.refresh(listing)
     return listing
