@@ -15,10 +15,10 @@ const CATEGORY_COLORS = {
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
   totalCount, adding, error, refreshing, refreshProgress, ingesting, ingestMsg, theme,
-  currentUser, proposalCount, soldUnseen, showProposals, viewMode,
+  currentUser, proposalCount, soldUnseen, showProposals, showWatched, watchedCount, viewMode,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
   onSortChange, onAdd, onRefresh, onIngest, onEmailRealtor, onSearch, onToggleTheme,
-  onUserChange, onShowProposals, onHideProposals, onViewModeChange,
+  onUserChange, onShowProposals, onHideProposals, onShowWatched, onHideWatched, onViewModeChange,
 }) {
   const [input, setInput] = useState('')
 
@@ -53,24 +53,31 @@ export default function TopBar({
             Proposals{proposalCount > 0 ? ` (${proposalCount})` : ''}
           </button>
 
+          <button
+            className={`tab tab--watched${showWatched ? ' active' : ''}`}
+            onClick={onShowWatched}
+          >
+            Watching{watchedCount > 0 ? ` (${watchedCount})` : ''}
+          </button>
+
           <span className="tab-sep" aria-hidden="true" />
 
           {/* Type tabs — one always active, independent of category selection */}
           <button
-            className={`tab${!propertyType && !showProposals && !priceChangedFilter ? ' active' : ''}`}
-            onClick={() => { onHideProposals(); onPropertyTypeChange('') }}
+            className={`tab${!propertyType && !showProposals && !showWatched && !priceChangedFilter ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onHideWatched(); onPropertyTypeChange('') }}
           >
             All
           </button>
           <button
-            className={`tab${propertyType === 'House' && !showProposals ? ' active' : ''}`}
-            onClick={() => { onHideProposals(); onPropertyTypeChange('House') }}
+            className={`tab${propertyType === 'House' && !showProposals && !showWatched ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onHideWatched(); onPropertyTypeChange('House') }}
           >
             Houses
           </button>
           <button
-            className={`tab${propertyType === 'Land' && !showProposals ? ' active' : ''}`}
-            onClick={() => { onHideProposals(); onPropertyTypeChange('Land') }}
+            className={`tab${propertyType === 'Land' && !showProposals && !showWatched ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onHideWatched(); onPropertyTypeChange('Land') }}
           >
             Land
           </button>
@@ -81,7 +88,7 @@ export default function TopBar({
           {categories.map((c) => (
             <button
               key={c}
-              className={`tab tab--cat${category === c && !priceChangedFilter && !showProposals ? ' active' : ''}`}
+              className={`tab tab--cat${category === c && !priceChangedFilter && !showProposals && !showWatched ? ' active' : ''}`}
               style={{ '--cat-color': CATEGORY_COLORS[c] ?? '#6b7280' }}
               onClick={() => onCategoryChange(category === c ? '' : c)}
             >

@@ -23,6 +23,7 @@ from models import (
     IngestLogDB, IngestLogResponse, IngestRequest,
     ProposeRequest, AgreeRequest, WithdrawRequest, RejectRequest,
     ReorderRequest, MarkViewedRequest,
+    WatchedPropertyDB, WatchedPropertyCreate, WatchedPropertyUpdate, WatchedPropertyResponse,
 )
 from scraper import scrape_listing
 
@@ -119,6 +120,24 @@ with engine.connect() as _conn:
             last_viewed_at TEXT NOT NULL
         )
     """))
+
+    _conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS watched_properties (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            address TEXT NOT NULL,
+            pid TEXT,
+            assessment REAL,
+            assessment_year INTEGER,
+            area_acres REAL,
+            notes TEXT,
+            date_added DATETIME NOT NULL
+        )
+    """))
+    for _col, _type in [("assessment", "REAL"), ("assessment_year", "INTEGER"), ("area_acres", "REAL")]:
+        try:
+            _conn.execute(text(f"ALTER TABLE watched_properties ADD COLUMN {_col} {_type}"))
+        except Exception:
+            pass
     # Pre-populate known users so existing Sold listings don't appear as unseen
     _seed_ts = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S.%f')
     for _u in ("Wayne", "Christina"):
@@ -860,6 +879,39 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
         existing_keys.add(key)
         added += 1
 
+    # Cross-reference newly added listings against watched properties
+    watched_matches = []
+    if added > 0:
+        watched_all = db.query(WatchedPropertyDB).all()
+        if watched_all:
+            new_listings = (
+                db.query(ListingDB)
+                .filter(ListingDB.date_added == now)
+                .all()
+            )
+            def _wp_addr_parts(addr):
+                parts = addr.lower().strip().rsplit(',', 1)
+                return (parts[0].strip(), parts[1].strip()) if len(parts) == 2 else (parts[0].strip(), None)
+
+            for new_l in new_listings:
+                for wp in watched_all:
+                    matched = False
+                    if wp.pid and new_l.listing_id and wp.pid == new_l.listing_id:
+                        matched = True
+                    if not matched and new_l.address:
+                        ns, nc = _wp_addr_parts(new_l.address)
+                        ws, wc = _wp_addr_parts(wp.address)
+                        if ns == ws and not (nc and wc and nc != wc):
+                            matched = True
+                    if matched:
+                        watched_matches.append({
+                            "watched_id": wp.id,
+                            "watched_address": wp.address,
+                            "listing_id": new_l.id,
+                            "listing_address": new_l.address,
+                        })
+                        break
+
     db.add(IngestLogDB(
         run_at=now,
         run_by=body.run_by,
@@ -885,6 +937,7 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
         "price_lot_filtered": price_lot_filtered,
         "already_tracked": already_tracked,
         "waterfront_skipped": waterfront_skipped,
+        "watched_matches": watched_matches,
         "run_at": now.isoformat(),
         "run_by": body.run_by,
     }
@@ -1131,6 +1184,61 @@ def delete_listing(listing_id: int, db: Session = Depends(get_db)):
     db.flush()
     if old_category in RANKED_CATEGORIES:
         _renumber_ranks(db, old_property_type, old_category)
+    db.commit()
+    return {"ok": True}
+
+
+# ── Watched Properties ────────────────────────────────────────────────────────
+
+@app.get("/api/watched", response_model=List[WatchedPropertyResponse])
+def get_watched(db: Session = Depends(get_db)):
+    return db.query(WatchedPropertyDB).order_by(WatchedPropertyDB.date_added.asc()).all()
+
+
+@app.post("/api/watched", response_model=WatchedPropertyResponse)
+def create_watched(body: WatchedPropertyCreate, db: Session = Depends(get_db)):
+    wp = WatchedPropertyDB(
+        address=body.address.strip(),
+        pid=body.pid.strip() if body.pid else None,
+        assessment=body.assessment,
+        assessment_year=body.assessment_year,
+        area_acres=body.area_acres,
+        notes=body.notes or None,
+        date_added=datetime.utcnow(),
+    )
+    db.add(wp)
+    db.commit()
+    db.refresh(wp)
+    return wp
+
+
+@app.patch("/api/watched/{wp_id}", response_model=WatchedPropertyResponse)
+def update_watched(wp_id: int, body: WatchedPropertyUpdate, db: Session = Depends(get_db)):
+    wp = db.get(WatchedPropertyDB, wp_id)
+    if not wp:
+        raise HTTPException(status_code=404, detail="Not found")
+    updates = body.model_dump(exclude_unset=True)
+    if "pid" in updates:
+        wp.pid = updates["pid"].strip() if updates["pid"] else None
+    if "assessment" in updates:
+        wp.assessment = updates["assessment"]
+    if "assessment_year" in updates:
+        wp.assessment_year = updates["assessment_year"]
+    if "area_acres" in updates:
+        wp.area_acres = updates["area_acres"]
+    if "notes" in updates:
+        wp.notes = updates["notes"] or None
+    db.commit()
+    db.refresh(wp)
+    return wp
+
+
+@app.delete("/api/watched/{wp_id}")
+def delete_watched(wp_id: int, db: Session = Depends(get_db)):
+    wp = db.get(WatchedPropertyDB, wp_id)
+    if not wp:
+        raise HTTPException(status_code=404, detail="Not found")
+    db.delete(wp)
     db.commit()
     return {"ok": True}
 

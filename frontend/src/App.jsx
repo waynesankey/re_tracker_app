@@ -8,6 +8,7 @@ import IngestResultsModal from './components/IngestResultsModal'
 import SearchModal from './components/SearchModal'
 import ProposalsView from './components/ProposalsView'
 import ListingMap from './components/ListingMap'
+import WatchedView from './components/WatchedView'
 
 export const RANKED_CATEGORIES = ['Interested', 'Showing Requested', 'Visited']
 
@@ -36,6 +37,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(getInitialUser)
   const [proposals, setProposals] = useState([])
   const [showProposals, setShowProposals] = useState(false)
+  const [showWatched, setShowWatched] = useState(false)
+  const [watched, setWatched] = useState([])
   const [soldUnseen, setSoldUnseen] = useState(0)
   const [propertyType, setPropertyType] = useState('')
   const [category, setCategory] = useState('')
@@ -77,6 +80,13 @@ export default function App() {
     } catch (_) {}
   }, [])
 
+  const loadWatched = useCallback(async () => {
+    try {
+      const data = await api.getWatched()
+      setWatched(data)
+    } catch (_) {}
+  }, [])
+
   const loadSoldUnseen = useCallback(async () => {
     if (!currentUser) return
     try {
@@ -107,6 +117,8 @@ export default function App() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => { loadSoldUnseen() }, [loadSoldUnseen])
+
+  useEffect(() => { loadWatched() }, [loadWatched])
 
   // Poll for changes across devices. Proposals and sold-unseen always check.
   // Listings only reload when the server version (MAX date_updated) has changed,
@@ -225,6 +237,21 @@ export default function App() {
     await load()
     if (showProposals) setSelected(null)
     else setSelected(updated)
+  }
+
+  const handleWatchedAdd = async (data) => {
+    await api.createWatched(data)
+    await loadWatched()
+  }
+
+  const handleWatchedDelete = async (id) => {
+    await api.deleteWatched(id)
+    setWatched((w) => w.filter((wp) => wp.id !== id))
+  }
+
+  const handleWatchedSave = async (id, data) => {
+    const updated = await api.updateWatched(id, data)
+    setWatched((w) => w.map((wp) => wp.id === id ? updated : wp))
   }
 
   const handleRefresh = async () => {
@@ -352,6 +379,8 @@ export default function App() {
         proposalCount={proposals.length}
         soldUnseen={soldUnseen}
         showProposals={showProposals}
+        showWatched={showWatched}
+        watchedCount={watched.length}
         viewMode={viewMode}
         onPropertyTypeChange={handlePropertyTypeChange}
         onCategoryChange={handleCategoryChange}
@@ -364,29 +393,38 @@ export default function App() {
         onSearch={() => setSearchOpen(true)}
         onToggleTheme={toggleTheme}
         onUserChange={handleUserChange}
-        onShowProposals={() => { setShowProposals(true); setSelected(null); loadProposals() }}
+        onShowProposals={() => { setShowProposals(true); setShowWatched(false); setSelected(null); loadProposals() }}
         onHideProposals={() => setShowProposals(false)}
+        onShowWatched={() => { setShowWatched(true); setShowProposals(false); setSelected(null); loadWatched() }}
+        onHideWatched={() => setShowWatched(false)}
         onViewModeChange={setViewMode}
       />
-      {showProposals
-        ? <ProposalsView
-            proposals={proposals}
-            currentUser={currentUser}
-            onSelect={setSelected}
-            onAgree={handleAgree}
-            onWithdraw={handleWithdraw}
-            onReject={handleReject}
+      {showWatched
+        ? <WatchedView
+            watched={watched}
+            onAdd={handleWatchedAdd}
+            onDelete={handleWatchedDelete}
+            onSave={handleWatchedSave}
           />
-        : viewMode === 'map'
-          ? <ListingMap listings={listings} onSelect={handleSelectById} />
-          : <ListingGrid
-              listings={listings}
-              loading={loading}
+        : showProposals
+          ? <ProposalsView
+              proposals={proposals}
+              currentUser={currentUser}
               onSelect={setSelected}
-              isRankedCategory={isRankedCategory}
-              isRanked={isRanked}
-              onReorder={handleReorder}
+              onAgree={handleAgree}
+              onWithdraw={handleWithdraw}
+              onReject={handleReject}
             />
+          : viewMode === 'map'
+            ? <ListingMap listings={listings} onSelect={handleSelectById} />
+            : <ListingGrid
+                listings={listings}
+                loading={loading}
+                onSelect={setSelected}
+                isRankedCategory={isRankedCategory}
+                isRanked={isRanked}
+                onReorder={handleReorder}
+              />
       }
       {selected && (
         <ListingDetail

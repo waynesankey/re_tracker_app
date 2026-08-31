@@ -110,4 +110,18 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
     }),
+  getWatched: () => req('/watched'),
+  createWatched: (data) =>
+    req('/watched', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  updateWatched: (id, data) =>
+    req(`/watched/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  deleteWatched: (id) => req(`/watched/${id}`, { method: 'DELETE' }),
 }

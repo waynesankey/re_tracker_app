@@ -90,6 +90,24 @@ export default function IngestResultsModal({ result, onClose }) {
             <FunnelRow label="Added to Inbox" value={result.added} delta={result.added || null} highlight />
           </div>
 
+          {result.watched_matches && result.watched_matches.length > 0 && (
+            <div className="ingest-watched-alert">
+              <p className="ingest-watched-alert-title">
+                🏠 {result.watched_matches.length} watched {result.watched_matches.length === 1 ? 'property' : 'properties'} now listed!
+              </p>
+              <ul className="ingest-watched-alert-list">
+                {result.watched_matches.map((m) => (
+                  <li key={m.watched_id}>
+                    <span className="ingest-watched-alert-addr">{m.watched_address}</span>
+                    {m.listing_address && m.listing_address !== m.watched_address && (
+                      <span className="ingest-watched-alert-match"> → {m.listing_address}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* History table */}
           {history.length > 1 && (
             <>

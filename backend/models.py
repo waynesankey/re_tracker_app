@@ -209,3 +209,46 @@ class RejectRequest(BaseModel):
 
 class MarkViewedRequest(BaseModel):
     user: str
+
+
+class WatchedPropertyDB(Base):
+    __tablename__ = "watched_properties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    address = Column(String, nullable=False)
+    pid = Column(String, nullable=True)
+    assessment = Column(Float, nullable=True)
+    assessment_year = Column(Integer, nullable=True)
+    area_acres = Column(Float, nullable=True)
+    notes = Column(String, nullable=True)
+    date_added = Column(DateTime, default=datetime.utcnow)
+
+
+class WatchedPropertyCreate(BaseModel):
+    address: str
+    pid: Optional[str] = None
+    assessment: Optional[float] = None
+    assessment_year: Optional[int] = None
+    area_acres: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class WatchedPropertyUpdate(BaseModel):
+    pid: Optional[str] = None
+    assessment: Optional[float] = None
+    assessment_year: Optional[int] = None
+    area_acres: Optional[float] = None
+    notes: Optional[str] = None
+
+
+class WatchedPropertyResponse(BaseModel):
+    id: int
+    address: str
+    pid: Optional[str] = None
+    assessment: Optional[float] = None
+    assessment_year: Optional[int] = None
+    area_acres: Optional[float] = None
+    notes: Optional[str] = None
+    date_added: datetime
+
+    model_config = {"from_attributes": True}
