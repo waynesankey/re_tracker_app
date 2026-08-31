@@ -110,6 +110,9 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items }),
     }),
+  archiveGallery: (id) => req(`/listings/${id}/archive-gallery`, { method: 'POST' }),
+  getGallery: (id) => req(`/listings/${id}/gallery`),
+  getInspiration: () => req('/inspiration'),
   getWatched: () => req('/watched'),
   createWatched: (data) =>
     req('/watched', {

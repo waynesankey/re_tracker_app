@@ -28,6 +28,7 @@ class ListingDB(Base):
     lat = Column(Float, nullable=True)
     lng = Column(Float, nullable=True)
     notes = Column(String)
+    gallery_count = Column(Integer, nullable=True)
     date_added = Column(DateTime, default=datetime.utcnow)
     date_updated = Column(DateTime, default=datetime.utcnow)
 
@@ -140,6 +141,7 @@ class ListingResponse(BaseModel):
     lat: Optional[float] = None
     lng: Optional[float] = None
     notes: Optional[str] = None
+    gallery_count: Optional[int] = None
     date_added: datetime
     date_updated: datetime
 

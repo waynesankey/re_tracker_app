@@ -15,10 +15,12 @@ const CATEGORY_COLORS = {
 export default function TopBar({
   propertyType, categories, category, priceChangedFilter, sort,
   totalCount, adding, error, refreshing, refreshProgress, ingesting, ingestMsg, theme,
-  currentUser, proposalCount, soldUnseen, showProposals, showWatched, watchedCount, viewMode,
+  currentUser, proposalCount, soldUnseen, showProposals, showWatched, watchedCount,
+  showInspiration, inspirationCount, viewMode,
   onPropertyTypeChange, onCategoryChange, onPriceChangedFilter,
   onSortChange, onAdd, onRefresh, onIngest, onEmailRealtor, onSearch, onToggleTheme,
-  onUserChange, onShowProposals, onHideProposals, onShowWatched, onHideWatched, onViewModeChange,
+  onUserChange, onShowProposals, onHideProposals, onShowWatched, onHideWatched,
+  onShowInspiration, onHideInspiration, onViewModeChange,
 }) {
   const [input, setInput] = useState('')
 
@@ -60,24 +62,31 @@ export default function TopBar({
             Watching{watchedCount > 0 ? ` (${watchedCount})` : ''}
           </button>
 
+          <button
+            className={`tab tab--inspiration${showInspiration ? ' active' : ''}`}
+            onClick={onShowInspiration}
+          >
+            Inspiration{inspirationCount > 0 ? ` (${inspirationCount})` : ''}
+          </button>
+
           <span className="tab-sep" aria-hidden="true" />
 
           {/* Type tabs — one always active, independent of category selection */}
           <button
-            className={`tab${!propertyType && !showProposals && !showWatched && !priceChangedFilter ? ' active' : ''}`}
-            onClick={() => { onHideProposals(); onHideWatched(); onPropertyTypeChange('') }}
+            className={`tab${!propertyType && !showProposals && !showWatched && !showInspiration && !priceChangedFilter ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onHideWatched(); onHideInspiration(); onPropertyTypeChange('') }}
           >
             All
           </button>
           <button
-            className={`tab${propertyType === 'House' && !showProposals && !showWatched ? ' active' : ''}`}
-            onClick={() => { onHideProposals(); onHideWatched(); onPropertyTypeChange('House') }}
+            className={`tab${propertyType === 'House' && !showProposals && !showWatched && !showInspiration ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onHideWatched(); onHideInspiration(); onPropertyTypeChange('House') }}
           >
             Houses
           </button>
           <button
-            className={`tab${propertyType === 'Land' && !showProposals && !showWatched ? ' active' : ''}`}
-            onClick={() => { onHideProposals(); onHideWatched(); onPropertyTypeChange('Land') }}
+            className={`tab${propertyType === 'Land' && !showProposals && !showWatched && !showInspiration ? ' active' : ''}`}
+            onClick={() => { onHideProposals(); onHideWatched(); onHideInspiration(); onPropertyTypeChange('Land') }}
           >
             Land
           </button>
@@ -88,7 +97,7 @@ export default function TopBar({
           {categories.map((c) => (
             <button
               key={c}
-              className={`tab tab--cat${category === c && !priceChangedFilter && !showProposals && !showWatched ? ' active' : ''}`}
+              className={`tab tab--cat${category === c && !priceChangedFilter && !showProposals && !showWatched && !showInspiration ? ' active' : ''}`}
               style={{ '--cat-color': CATEGORY_COLORS[c] ?? '#6b7280' }}
               onClick={() => onCategoryChange(category === c ? '' : c)}
             >

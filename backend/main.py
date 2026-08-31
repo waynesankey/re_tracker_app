@@ -14,7 +14,7 @@ from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
 
 from database import Base, engine, get_db, SessionLocal
-from photos import PHOTOS_DIR, cache_photo
+from photos import PHOTOS_DIR, cache_photo, gallery_dir, gallery_photo_urls
 from models import (
     ListingCreate, ListingDB, ListingResponse, ListingUpdate,
     StatusHistoryDB, StatusHistoryResponse,
@@ -25,7 +25,7 @@ from models import (
     ReorderRequest, MarkViewedRequest,
     WatchedPropertyDB, WatchedPropertyCreate, WatchedPropertyUpdate, WatchedPropertyResponse,
 )
-from scraper import scrape_listing
+from scraper import scrape_listing, fetch_gallery_info
 
 Base.metadata.create_all(bind=engine)
 
@@ -50,7 +50,7 @@ with engine.connect() as _conn:
         "property_type TEXT", "listing_id TEXT", "class_id TEXT",
         "proposed_category TEXT", "proposed_by TEXT", "proposed_at DATETIME",
         "rank INTEGER", "listing_status TEXT", "waterfront BOOLEAN",
-        "lat REAL", "lng REAL",
+        "lat REAL", "lng REAL", "gallery_count INTEGER",
     ):
         try:
             _conn.execute(text(f"ALTER TABLE listings ADD COLUMN {col}"))
@@ -1186,6 +1186,64 @@ def delete_listing(listing_id: int, db: Session = Depends(get_db)):
         _renumber_ranks(db, old_property_type, old_category)
     db.commit()
     return {"ok": True}
+
+
+# ── Gallery archiving ─────────────────────────────────────────────────────────
+
+@app.post("/api/listings/{listing_id}/archive-gallery")
+def archive_gallery(listing_id: int, db: Session = Depends(get_db)):
+    listing = db.get(ListingDB, listing_id)
+    if not listing:
+        raise HTTPException(status_code=404, detail="Not found")
+    if not listing.listing_id or not listing.class_id:
+        raise HTTPException(status_code=400, detail="Not a Viewpoint listing")
+
+    info = fetch_gallery_info(listing.listing_id, listing.class_id)
+    if not info:
+        raise HTTPException(status_code=410, detail="Listing no longer available on Viewpoint")
+
+    internal_id = info["internal_id"]
+    pix_count = info["pix_count"]
+
+    import requests as _req
+    from scraper import HEADERS as _HDRS
+
+    gdir = gallery_dir(listing_id)
+    os.makedirs(gdir, exist_ok=True)
+
+    saved = 0
+    for n in range(1, pix_count + 1):
+        url = f"https://www.viewpoint.ca/property/cutimage/{internal_id}/{n}.jpg?sd=1024"
+        try:
+            r = _req.get(url, headers=_HDRS, timeout=20)
+            if r.status_code == 200 and len(r.content) > 50_000:
+                with open(os.path.join(gdir, f"{n:03d}.jpg"), "wb") as f:
+                    f.write(r.content)
+                saved += 1
+        except Exception:
+            pass
+
+    listing.gallery_count = saved
+    db.commit()
+    return {"saved": saved, "total": pix_count}
+
+
+@app.get("/api/listings/{listing_id}/gallery")
+def get_gallery(listing_id: int, db: Session = Depends(get_db)):
+    if not db.get(ListingDB, listing_id):
+        raise HTTPException(status_code=404, detail="Not found")
+    urls = gallery_photo_urls(listing_id)
+    return {"photos": urls, "count": len(urls)}
+
+
+@app.get("/api/inspiration", response_model=List[ListingResponse])
+def get_inspiration(db: Session = Depends(get_db)):
+    return (
+        db.query(ListingDB)
+        .filter(ListingDB.gallery_count > 0)
+        .order_by(ListingDB.date_updated.desc())
+        .all()
+    )
 
 
 # ── Watched Properties ────────────────────────────────────────────────────────

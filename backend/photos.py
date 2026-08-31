@@ -21,6 +21,21 @@ def _local_path(db_id: int) -> str:
     return os.path.join(PHOTOS_DIR, f"{db_id}.jpg")
 
 
+def gallery_dir(db_id: int) -> str:
+    return os.path.join(PHOTOS_DIR, str(db_id), "gallery")
+
+
+def gallery_photo_urls(db_id: int) -> list:
+    gdir = gallery_dir(db_id)
+    if not os.path.isdir(gdir):
+        return []
+    return [
+        f"/photos/{db_id}/gallery/{f}"
+        for f in sorted(os.listdir(gdir))
+        if f.endswith(".jpg")
+    ]
+
+
 def cache_photo(db_id: int, remote_url: str) -> str | None:
     """Download remote_url and save locally. Returns local URL on success, None on failure.
     Returns the local URL immediately if already cached. No-op for already-local URLs."""

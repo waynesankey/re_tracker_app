@@ -9,6 +9,7 @@ import SearchModal from './components/SearchModal'
 import ProposalsView from './components/ProposalsView'
 import ListingMap from './components/ListingMap'
 import WatchedView from './components/WatchedView'
+import InspirationView from './components/InspirationView'
 
 export const RANKED_CATEGORIES = ['Interested', 'Showing Requested', 'Visited']
 
@@ -39,6 +40,8 @@ export default function App() {
   const [showProposals, setShowProposals] = useState(false)
   const [showWatched, setShowWatched] = useState(false)
   const [watched, setWatched] = useState([])
+  const [showInspiration, setShowInspiration] = useState(false)
+  const [inspiration, setInspiration] = useState([])
   const [soldUnseen, setSoldUnseen] = useState(0)
   const [propertyType, setPropertyType] = useState('')
   const [category, setCategory] = useState('')
@@ -87,6 +90,13 @@ export default function App() {
     } catch (_) {}
   }, [])
 
+  const loadInspiration = useCallback(async () => {
+    try {
+      const data = await api.getInspiration()
+      setInspiration(data)
+    } catch (_) {}
+  }, [])
+
   const loadSoldUnseen = useCallback(async () => {
     if (!currentUser) return
     try {
@@ -119,6 +129,7 @@ export default function App() {
   useEffect(() => { loadSoldUnseen() }, [loadSoldUnseen])
 
   useEffect(() => { loadWatched() }, [loadWatched])
+  useEffect(() => { loadInspiration() }, [loadInspiration])
 
   // Poll for changes across devices. Proposals and sold-unseen always check.
   // Listings only reload when the server version (MAX date_updated) has changed,
@@ -381,6 +392,8 @@ export default function App() {
         showProposals={showProposals}
         showWatched={showWatched}
         watchedCount={watched.length}
+        showInspiration={showInspiration}
+        inspirationCount={inspiration.length}
         viewMode={viewMode}
         onPropertyTypeChange={handlePropertyTypeChange}
         onCategoryChange={handleCategoryChange}
@@ -393,13 +406,20 @@ export default function App() {
         onSearch={() => setSearchOpen(true)}
         onToggleTheme={toggleTheme}
         onUserChange={handleUserChange}
-        onShowProposals={() => { setShowProposals(true); setShowWatched(false); setSelected(null); loadProposals() }}
+        onShowProposals={() => { setShowProposals(true); setShowWatched(false); setShowInspiration(false); setSelected(null); loadProposals() }}
         onHideProposals={() => setShowProposals(false)}
-        onShowWatched={() => { setShowWatched(true); setShowProposals(false); setSelected(null); loadWatched() }}
+        onShowWatched={() => { setShowWatched(true); setShowProposals(false); setShowInspiration(false); setSelected(null); loadWatched() }}
         onHideWatched={() => setShowWatched(false)}
+        onShowInspiration={() => { setShowInspiration(true); setShowProposals(false); setShowWatched(false); setSelected(null); loadInspiration() }}
+        onHideInspiration={() => setShowInspiration(false)}
         onViewModeChange={setViewMode}
       />
-      {showWatched
+      {showInspiration
+        ? <InspirationView
+            listings={inspiration}
+            onSelectListing={handleSelectById}
+          />
+        : showWatched
         ? <WatchedView
             watched={watched}
             onAdd={handleWatchedAdd}

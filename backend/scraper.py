@@ -164,6 +164,44 @@ def _viewpoint_extract(soup: BeautifulSoup) -> Dict:
     return extras
 
 
+def fetch_gallery_info(listing_id: str, class_id: str) -> Optional[Dict]:
+    """Fetch a Viewpoint cutsheet and return internal_id + pix_count, or None."""
+    url = f"https://www.viewpoint.ca/cutsheet/{listing_id}/{class_id}"
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
+        resp.raise_for_status()
+    except Exception:
+        return None
+    if "/map" in resp.url:
+        return None
+    try:
+        soup = BeautifulSoup(resp.text, "lxml")
+    except Exception:
+        return None
+    for script in soup.find_all("script"):
+        txt = script.string or ""
+        if "initCutsheet" not in txt:
+            continue
+        start = txt.find("initCutsheet(") + len("initCutsheet(")
+        depth = 0
+        for i, c in enumerate(txt[start:], start):
+            if c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        data = json.loads(txt[start: i + 1])
+                        internal_id = data.get("id")
+                        pix_count = int(data.get("pix_count") or 0)
+                        if internal_id and pix_count:
+                            return {"internal_id": internal_id, "pix_count": pix_count}
+                    except Exception:
+                        pass
+                    break
+    return None
+
+
 def scrape_listing(url: str) -> Dict:
     parsed = urlparse(url)
     source_domain = parsed.netloc.replace("www.", "")

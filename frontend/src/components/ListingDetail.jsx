@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { api } from '../api'
 import Window from './Window'
+import GalleryLightbox from './GalleryLightbox'
 
 const BADGE_COLORS = {
   'Inbox': '#0e7490',
@@ -30,6 +32,10 @@ export default function ListingDetail({
   const [showRejectForm, setShowRejectForm] = useState(false)
   const [rejectNote, setRejectNote] = useState('')
   const [proposalBusy, setProposalBusy] = useState(false)
+  const [archiving, setArchiving] = useState(false)
+  const [archiveResult, setArchiveResult] = useState(null)
+  const [archiveError, setArchiveError] = useState(null)
+  const [showGallery, setShowGallery] = useState(false)
   const bannerTimerRef = useRef(null)
 
   const fetchHistory = useCallback(() => {
@@ -142,6 +148,20 @@ export default function ListingDetail({
     finally { setProposalBusy(false) }
   }
 
+  const handleArchiveGallery = async () => {
+    setArchiving(true)
+    setArchiveError(null)
+    setArchiveResult(null)
+    try {
+      const result = await api.archiveGallery(listing.id)
+      setArchiveResult(result)
+    } catch (e) {
+      setArchiveError(e.message)
+    } finally {
+      setArchiving(false)
+    }
+  }
+
   const dateAdded = new Date(listing.date_added).toLocaleDateString('en-CA', {
     year: 'numeric', month: 'short', day: 'numeric',
   })
@@ -151,6 +171,7 @@ export default function ListingDetail({
   const winTitle = listing.address || listing.title || 'Listing'
 
   return (
+    <>
     <Window title={winTitle} onClose={onClose} width={620} initialX={Math.max(20, window.innerWidth / 2 - 310)} initialY={70}>
         {notice && (
           <div className="saved-banner" role="status">
@@ -398,6 +419,37 @@ export default function ListingDetail({
             </div>
           )}
 
+          {listing.listing_id && listing.class_id && (
+            <div className="gallery-archive-section">
+              <div className="gallery-archive-row">
+                <button
+                  className="btn btn-sm gallery-archive-btn"
+                  onClick={handleArchiveGallery}
+                  disabled={archiving}
+                >
+                  {archiving ? 'Archiving photos…' : listing.gallery_count > 0 ? `Re-archive photos (${listing.gallery_count} saved)` : 'Archive all photos'}
+                </button>
+                {archiveResult && (
+                  <span className="gallery-archive-ok">
+                    ✓ {archiveResult.saved} of {archiveResult.total} photos saved
+                  </span>
+                )}
+                {archiveError && (
+                  <span className="gallery-archive-err">{archiveError}</span>
+                )}
+              </div>
+              {(listing.gallery_count > 0 || archiveResult) && (
+                <button
+                  className="btn btn-sm gallery-archive-btn"
+                  style={{ marginTop: 6, background: '#5b21b6', borderColor: '#5b21b6' }}
+                  onClick={() => setShowGallery(true)}
+                >
+                  Browse gallery ({archiveResult?.saved ?? listing.gallery_count} photos)
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="modal-meta">
             <span>Added {dateAdded}</span>
             {listing.source_domain && <span>{listing.source_domain}</span>}
@@ -437,6 +489,11 @@ export default function ListingDetail({
           </div>
         </div>
     </Window>
+
+    {showGallery && (
+      <GalleryLightbox listing={listing} onClose={() => setShowGallery(false)} />
+    )}
+    </>
   )
 }
 
