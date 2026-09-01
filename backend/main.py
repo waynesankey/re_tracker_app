@@ -1203,7 +1203,7 @@ def archive_gallery(listing_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=410, detail="Listing no longer available on Viewpoint")
 
     internal_id = info["internal_id"]
-    pix_count = info["pix_count"]
+    pix_count = info["pix_count"]  # may be 0 for sold listings (property page has no pix_count)
 
     import requests as _req
     from scraper import HEADERS as _HDRS
@@ -1212,7 +1212,10 @@ def archive_gallery(listing_id: int, db: Session = Depends(get_db)):
     os.makedirs(gdir, exist_ok=True)
 
     saved = 0
-    for n in range(1, pix_count + 1):
+    # When pix_count is unknown (sold listing fallback), probe up to 120 photos and
+    # stop at the first placeholder (< 50 KB).  Otherwise use the known count.
+    limit = pix_count if pix_count > 0 else 120
+    for n in range(1, limit + 1):
         url = f"https://www.viewpoint.ca/property/cutimage/{internal_id}/{n}.jpg?sd=1024"
         try:
             r = _req.get(url, headers=_HDRS, timeout=20)
@@ -1220,12 +1223,16 @@ def archive_gallery(listing_id: int, db: Session = Depends(get_db)):
                 with open(os.path.join(gdir, f"{n:03d}.jpg"), "wb") as f:
                     f.write(r.content)
                 saved += 1
+            elif pix_count == 0:
+                break  # placeholder hit — no more photos
         except Exception:
-            pass
+            if pix_count == 0:
+                break
 
+    total = pix_count if pix_count > 0 else saved
     listing.gallery_count = saved
     db.commit()
-    return {"saved": saved, "total": pix_count}
+    return {"saved": saved, "total": total}
 
 
 @app.get("/api/listings/{listing_id}/gallery")

@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 from typing import Dict, Optional, Tuple
@@ -164,42 +165,74 @@ def _viewpoint_extract(soup: BeautifulSoup) -> Dict:
     return extras
 
 
+def _parse_initcutsheet(html_text: str) -> Optional[Dict]:
+    """Extract internal_id and pix_count from a page containing initCutsheet(...).
+
+    Uses raw_decode so that {} characters inside JSON string values (e.g. encoded
+    polyline coordinates) don't confuse the parser.
+    """
+    try:
+        soup = BeautifulSoup(html_text, "lxml")
+    except Exception:
+        return None
+    decoder = json.JSONDecoder()
+    for script in soup.find_all("script"):
+        txt = script.string or ""
+        if "initCutsheet" not in txt:
+            continue
+        after_call = txt.find("initCutsheet(") + len("initCutsheet(")
+        json_start = txt.find("{", after_call)
+        if json_start == -1:
+            continue
+        try:
+            data, _ = decoder.raw_decode(txt, json_start)
+            internal_id = data.get("id")
+            pix_count = int(data.get("pix_count") or 0)
+            if internal_id:
+                return {"internal_id": internal_id, "pix_count": pix_count}
+        except Exception:
+            pass
+    return None
+
+
 def fetch_gallery_info(listing_id: str, class_id: str) -> Optional[Dict]:
-    """Fetch a Viewpoint cutsheet and return internal_id + pix_count, or None."""
+    """Fetch a Viewpoint cutsheet and return internal_id + pix_count, or None.
+
+    For sold listings the cutsheet redirects to /map with a base64 fragment that
+    encodes the PID.  We decode the PID and fall back to /property/{pid}/{class_id}
+    which still serves the full initCutsheet data.
+    """
     url = f"https://www.viewpoint.ca/cutsheet/{listing_id}/{class_id}"
     try:
         resp = requests.get(url, headers=HEADERS, timeout=15, allow_redirects=True)
         resp.raise_for_status()
     except Exception:
         return None
+
     if "/map" in resp.url:
-        return None
-    try:
-        soup = BeautifulSoup(resp.text, "lxml")
-    except Exception:
-        return None
-    for script in soup.find_all("script"):
-        txt = script.string or ""
-        if "initCutsheet" not in txt:
-            continue
-        start = txt.find("initCutsheet(") + len("initCutsheet(")
-        depth = 0
-        for i, c in enumerate(txt[start:], start):
-            if c == "{":
-                depth += 1
-            elif c == "}":
-                depth -= 1
-                if depth == 0:
-                    try:
-                        data = json.loads(txt[start: i + 1])
-                        internal_id = data.get("id")
-                        pix_count = int(data.get("pix_count") or 0)
-                        if internal_id and pix_count:
-                            return {"internal_id": internal_id, "pix_count": pix_count}
-                    except Exception:
-                        pass
-                    break
-    return None
+        # Extract PID from the base64 fragment in the redirect URL
+        # e.g. /map#eyJvdmVydmlldyI6eyJwcm9wZXJ0eSI6eyJwaWQiOiI0MTMwMDIzNyIsImNsYXNzX2lkIjoiMSJ9fX0=
+        pid = None
+        if "#" in resp.url:
+            fragment = resp.url.split("#", 1)[1]
+            try:
+                payload = json.loads(base64.b64decode(fragment + "==").decode())
+                pid = payload.get("overview", {}).get("property", {}).get("pid")
+            except Exception:
+                pass
+        if not pid:
+            return None
+        try:
+            fallback = requests.get(
+                f"https://www.viewpoint.ca/property/{pid}/{class_id}",
+                headers=HEADERS, timeout=15, allow_redirects=True,
+            )
+            fallback.raise_for_status()
+        except Exception:
+            return None
+        return _parse_initcutsheet(fallback.text)
+
+    return _parse_initcutsheet(resp.text)
 
 
 def scrape_listing(url: str) -> Dict:
