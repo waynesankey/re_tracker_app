@@ -16,7 +16,7 @@ HRM_SEARCH_AREA = "44.7000, -63.4000, 10, 44.4500, -63.9000, 44.9500, -62.9000"
 HOUSE_MIN_PRICE = 600_000
 HOUSE_MAX_PRICE = 1_500_000
 LAND_MIN_PRICE  = 100_000
-LAND_MAX_PRICE  = 500_000
+LAND_MAX_PRICE  = 1_500_000
 
 # Minimum lot size in acres — filters out condos, townhouses, tiny urban parcels.
 MIN_LOT_ACRES = 0.25

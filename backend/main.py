@@ -802,7 +802,17 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
             existing_inactive.class_id = item["class_id"]
             existing_inactive.url = item["url"]
             existing_inactive.property_type = item["property_type"]
-            existing_inactive.category = "Inbox"
+            # Restore to "Interested" if that was the last active category before withdrawal
+            last_active_history = db.query(StatusHistoryDB).filter(
+                StatusHistoryDB.listing_id == existing_inactive.id,
+                StatusHistoryDB.to_category.notin_(["Sold", "Listing Withdrawn"]),
+            ).order_by(StatusHistoryDB.changed_at.desc()).first()
+            restore_category = (
+                "Interested"
+                if last_active_history and last_active_history.to_category == "Interested"
+                else "Inbox"
+            )
+            existing_inactive.category = restore_category
             existing_inactive.rank = None
             existing_inactive.listing_status = meta.get("listing_status")
             if meta.get("waterfront") is not None:
@@ -818,7 +828,7 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
             db.add(StatusHistoryDB(
                 listing_id=existing_inactive.id,
                 from_category=old_category,
-                to_category="Inbox",
+                to_category=restore_category,
                 changed_at=now,
             ))
             if new_price is not None and float(new_price) != old_price:
@@ -1311,7 +1321,13 @@ def delete_watched(wp_id: int, db: Session = Depends(get_db)):
 # Serve built React frontend
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "frontend", "dist")
 
-app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
+class _NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+app.mount("/photos", _NoCacheStaticFiles(directory=PHOTOS_DIR), name="photos")
 
 if os.path.exists(STATIC_DIR):
     assets_dir = os.path.join(STATIC_DIR, "assets")

@@ -38,12 +38,10 @@ def gallery_photo_urls(db_id: int) -> list:
 
 def cache_photo(db_id: int, remote_url: str) -> str | None:
     """Download remote_url and save locally. Returns local URL on success, None on failure.
-    Returns the local URL immediately if already cached. No-op for already-local URLs."""
+    No-op for already-local URLs."""
     if not remote_url or remote_url.startswith("/photos/"):
         return remote_url or None
     path = _local_path(db_id)
-    if os.path.exists(path):
-        return local_photo_url(db_id)
     try:
         resp = requests.get(remote_url, headers=_HEADERS, timeout=15)
         resp.raise_for_status()
@@ -51,4 +49,7 @@ def cache_photo(db_id: int, remote_url: str) -> str | None:
             f.write(resp.content)
         return local_photo_url(db_id)
     except Exception:
+        # Fall back to existing file if download fails
+        if os.path.exists(path):
+            return local_photo_url(db_id)
         return None
