@@ -795,6 +795,9 @@ def ingest_listings(body: IngestRequest = IngestRequest(), db: Session = Depends
         )
 
         if existing_inactive:
+            if meta.get("waterfront") is False:
+                waterfront_skipped += 1
+                continue
             old_category = existing_inactive.category
             old_price = float(existing_inactive.price) if existing_inactive.price is not None else None
             new_price = item.get("price")
